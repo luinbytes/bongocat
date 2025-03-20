@@ -7,10 +7,19 @@ from pynput import keyboard, mouse
 from PyQt5.QtWidgets import QGraphicsDropShadowEffect
 
 def resource_path(relative_path):
-    """Get the absolute path to a resource, works for PyInstaller."""
+    """Get the absolute path to a resource."""
+    if relative_path == "bongo.ini":
+        # Use AppData for the config file
+        appdata_path = os.path.join(os.getenv("APPDATA"), "BongoCat")
+        os.makedirs(appdata_path, exist_ok=True)  # Ensure the directory exists
+        return os.path.join(appdata_path, relative_path)
     if hasattr(sys, '_MEIPASS'):
-        return os.path.join(sys._MEIPASS, relative_path)
-    return os.path.join(os.path.abspath("."), relative_path)
+        # If running as a PyInstaller bundle
+        base_path = sys._MEIPASS
+    else:
+        # If running as a script
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(base_path, relative_path)
 
 class BongoCatWindow(QtWidgets.QWidget):
     trigger_slap = QtCore.pyqtSignal()
@@ -351,8 +360,11 @@ class BongoCatWindow(QtWidgets.QWidget):
                 "floating_points": "true",
                 "floating_points_alpha": "50"
             }
-            with open(config_path, "w") as config_file:
-                self.config.write(config_file)
+            try:
+                with open(config_path, "w") as config_file:
+                    self.config.write(config_file)
+            except Exception as e:
+                print(f"Error creating config file: {e}")
 
         self.config.read(config_path)
         # Load settings
@@ -365,9 +377,13 @@ class BongoCatWindow(QtWidgets.QWidget):
 
     def save_config(self):
         """Save the current configuration to the file."""
-        self.config["Settings"]["slaps"] = str(self.slaps)
-        with open(resource_path("bongo.ini"), "w") as config_file:
-            self.config.write(config_file)
+        config_path = resource_path("bongo.ini")
+        try:
+            with open(config_path, "w") as config_file:
+                self.config["Settings"]["slaps"] = str(self.slaps)
+                self.config.write(config_file)
+        except Exception as e:
+            print(f"Error saving config: {e}")
 
 
 # ----------------------
