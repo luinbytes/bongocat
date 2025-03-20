@@ -1,0 +1,4 @@
+pygame==2.5.2
+pywin32==306
+keyboard==0.13.5
+inputs==0.5
