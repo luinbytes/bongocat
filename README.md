@@ -2,6 +2,8 @@
 
 A fun interactive Bongo Cat application that responds to keyboard, mouse, and controller inputs!
 
+Offline, FOSS and GREAT!
+
 ## Features
 - Draggable Bongo Cat window
 - Responds to all keyboard inputs
