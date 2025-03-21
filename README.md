@@ -2,14 +2,7 @@
 
 <div align="center">
 
-```
-   |\---/|
-   | ,_, |
-    \_`_/-..----.
- ___/ `   ' ,""+ \  
-(__...'   __\    |`.___.';
-  (_,...'(_,.`__)/'.....+
-```
+|\(\ |_ _ |.---) ) ( T ) / (((^_(((/(((_/
 
 **Tap! Tap! Tap away with your very own virtual Bongo Cat!**
 
@@ -101,15 +94,6 @@ hidden_footer = true        # Stealth mode activated
 
 *Remember: Every tap brings joy, every slap makes noise,  
 and every beat makes your desktop a happier place!*
-
-```
-   /\___/\   Keep
-  (  ・ω・)   On
-  (        ) Tappin'
-   |    |
-   |    |
-   U    U
-```
 
 </div>
 
