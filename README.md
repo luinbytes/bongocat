@@ -2,7 +2,6 @@
 
 <div align="center">
 
-|\(\ |_ _ |.---) ) ( T ) / (((^_(((/(((_/
 
 **Tap! Tap! Tap away with your very own virtual Bongo Cat!**
 
