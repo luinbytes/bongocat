@@ -31,7 +31,9 @@
 🎯 **Always On Top** - never lose sight of your musical friend  
 ✨ **Floating Points** that dance with each tap  
 🔥 **Combo System** for those epic jam sessions  
-🏆 **Point Counter** to track your musical journey
+🏆 **Point Counter** to track your musical journey  
+🪞 **Flip Your Cat** with the invert option  
+⚙️ **Settings Panel** for easy customization
 
 </div>
 
@@ -51,6 +53,23 @@ pip install -r requirements.txt
 # Start jamming!
 python bongo_cat.py
 ```
+
+</div>
+
+---
+
+<div align="center">
+
+## 🏗️ Building Your Own Executable
+
+Want to share with friends? Use the included build script!
+
+```bash
+# Just double-click build.bat or run:
+./build.bat
+```
+
+This will create a standalone executable in the `dist` folder using PyInstaller.
 
 </div>
 
@@ -81,7 +100,25 @@ Edit `bongo.ini` to customize your experience:
 always_show_points = true   # Show off those beats!
 floating_points = true      # Make it rain numbers!
 hidden_footer = true        # Stealth mode activated
+invert_cat = false          # Flip your cat horizontally
 ```
+
+Or use the built-in settings panel by clicking the ⚙️ button in the footer!
+
+</div>
+
+---
+
+<div align="center">
+
+## 🚀 Recent Updates
+
+- ⚙️ New integrated settings panel
+- 🪞 Added option to invert (flip) the cat
+- 💯 Improved counter display and animations
+- 🔢 Better combo counter with visual effects
+- 🎯 More reliable click tracking
+- 🏗️ One-click build script
 
 </div>
 
