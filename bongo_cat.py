@@ -5,11 +5,16 @@ import configparser
 import random
 import math
 import logging
+import time
+import pygame
 from typing import Optional, cast
 from PyQt5 import QtCore, QtGui, QtWidgets
 from pynput import keyboard, mouse
 from PyQt5.QtWidgets import QGraphicsDropShadowEffect, QSystemTrayIcon, QMenu, QAction
 from PyQt5.QtCore import QSettings, Qt
+
+# Global variables
+PYGAME_AVAILABLE = True
 
 # ----------------------
 #  Setup Logging
@@ -1586,12 +1591,139 @@ def start_listeners(trigger_callback):
     def on_click(x, y, button, pressed):
         if pressed:
             trigger_callback()
+            
+    def check_controller():
+        """Check for controller inputs and trigger slap when buttons are pressed."""
+        global PYGAME_AVAILABLE
+        if not PYGAME_AVAILABLE:
+            return
+        
+        try:
+            pygame.init()
+            pygame.joystick.init()
+            
+            # Create an input buffer/queue to ensure no inputs are missed
+            from collections import deque
+            input_queue = deque(maxlen=100)  # Buffer up to 100 inputs
+            
+            # Track which buttons are currently pressed
+            active_buttons = set()
+            active_axes = set()
+            active_hats = set()
+            last_axes_values = {}
+            
+            # Loop to check for controller inputs
+            while True:
+                # Process all waiting events rather than just pumping
+                for event in pygame.event.get():
+                    # Handle button events explicitly
+                    if event.type == pygame.JOYBUTTONDOWN:
+                        button_id = f"joy{event.joy}_button{event.button}"
+                        if button_id not in active_buttons:
+                            active_buttons.add(button_id)
+                            input_queue.append(1)  # Add input to queue
+                    
+                    elif event.type == pygame.JOYBUTTONUP:
+                        button_id = f"joy{event.joy}_button{event.button}"
+                        if button_id in active_buttons:
+                            active_buttons.remove(button_id)
+                    
+                    # Handle axis motion events
+                    elif event.type == pygame.JOYAXISMOTION:
+                        axis_id = f"joy{event.joy}_axis{event.axis}"
+                        axis_value = event.value
+                        
+                        # Get previous value
+                        prev_value = last_axes_values.get(axis_id, 0)
+                        
+                        # For triggers (typically 2 and 5 on Xbox controllers)
+                        is_trigger = event.axis in (2, 5)
+                        
+                        # Detect significant movement or crossing threshold
+                        if is_trigger:
+                            # For triggers, only detect initial press and full release
+                            # This prevents multiple inputs during a single pull
+                            trigger_active_key = f"{axis_id}_active"
+                            if axis_value > 0.5 and trigger_active_key not in active_axes:
+                                # Trigger pressed past halfway point
+                                active_axes.add(trigger_active_key)
+                                input_queue.append(1)
+                            elif axis_value < 0.1 and trigger_active_key in active_axes:
+                                # Trigger released
+                                active_axes.remove(trigger_active_key)
+                        else:
+                            # For regular axes, detect crossing from center to edge
+                            axis_key = f"{axis_id}_{1 if axis_value > 0 else -1}"
+                            if abs(axis_value) > 0.7 and abs(prev_value) < 0.3:
+                                if axis_key not in active_axes:
+                                    active_axes.add(axis_key)
+                                    input_queue.append(1)
+                            elif abs(axis_value) < 0.3 and axis_key in active_axes:
+                                active_axes.remove(axis_key)
+                        
+                        # Update last value after processing
+                        last_axes_values[axis_id] = axis_value
+                
+                    # Handle hat motion events
+                    elif event.type == pygame.JOYHATMOTION:
+                        hat_id = f"joy{event.joy}_hat{event.hat}"
+                        hat_value = event.value
+                        hat_key = f"{hat_id}_{hat_value[0]},{hat_value[1]}"
+                        
+                        # Only trigger on non-zero hat values
+                        if hat_value != (0, 0):
+                            if hat_key not in active_hats:
+                                active_hats.add(hat_key)
+                                input_queue.append(1)
+                        else:
+                            # Remove any active hat entries for this hat
+                            for key in list(active_hats):
+                                if key.startswith(f"{hat_id}_"):
+                                    active_hats.remove(key)
+                
+                # Manually check joysticks as a fallback (for controllers with no proper events)
+                for i in range(pygame.joystick.get_count()):
+                    try:
+                        joystick = pygame.joystick.Joystick(i)
+                        joystick.init()
+                        
+                        # Check buttons that might have been missed by events
+                        for button_idx in range(joystick.get_numbuttons()):
+                            button_state = joystick.get_button(button_idx)
+                            button_id = f"joy{i}_button{button_idx}"
+                            
+                            if button_state and button_id not in active_buttons:
+                                active_buttons.add(button_id)
+                                input_queue.append(1)
+                            elif not button_state and button_id in active_buttons:
+                                active_buttons.remove(button_id)
+                    except:
+                        pass  # Skip any joystick that has issues
+                
+                # Process the input queue
+                while input_queue:
+                    # Process each input individually to ensure none are missed
+                    input_queue.popleft()
+                    trigger_callback()
+                
+                # Ultra-short sleep to prevent CPU overload but still catch all inputs
+                time.sleep(0.001)  # 1ms polling interval
+                
+        except Exception as e:
+            print(f"Controller listener error: {e}")
+            # If pygame fails, disable it
+            PYGAME_AVAILABLE = False
 
     keyboard_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
     keyboard_listener.start()
 
     mouse_listener = mouse.Listener(on_click=lambda x, y, button, pressed: trigger_callback() if pressed else None)
     mouse_listener.start()
+    
+    # Start controller listener in a separate thread
+    if PYGAME_AVAILABLE:
+        controller_thread = threading.Thread(target=check_controller, daemon=True)
+        controller_thread.start()
 
     keyboard_listener.join()
     mouse_listener.join()
