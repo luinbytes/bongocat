@@ -4,6 +4,7 @@ from .models import ConfigManager
 from .ui import BongoCatWindow, SettingsPanelWidget
 from .input import InputManager
 from .utils import resource_path, setup_logging
+from . import animations
 
 __version__ = "1.0.0"
 __author__ = "luinbytes"
@@ -15,5 +16,6 @@ __all__ = [
     'SettingsPanelWidget',
     'InputManager',
     'resource_path',
-    'setup_logging'
+    'setup_logging',
+    'animations'
 ]

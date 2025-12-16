@@ -15,6 +15,7 @@ from PyQt5.QtCore import QSettings, Qt
 from ..models import ConfigManager
 from ..utils import resource_path
 from .settings_panel import SettingsPanelWidget
+from ..animations import constants as anim
 
 logger = logging.getLogger("BongoCat")
 
@@ -82,9 +83,9 @@ class BongoCatWindow(QtWidgets.QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setMouseTracking(True)
-        
+
         # Ensure the window is tall enough to show the settings panel
-        self.min_height_with_settings = 450
+        self.min_height_with_settings = anim.MIN_HEIGHT_WITH_SETTINGS
 
     def setup_ui(self):
         """Initialize UI components."""
@@ -108,7 +109,7 @@ class BongoCatWindow(QtWidgets.QWidget):
 
         self.cat_width = self.idle_pixmap.width()
         self.cat_height = self.idle_pixmap.height()
-        self.footer_height = 35
+        self.footer_height = anim.FOOTER_HEIGHT
         self.setFixedSize(self.cat_width, self.cat_height + self.footer_height)
 
     def setup_main_container(self):
@@ -140,23 +141,23 @@ class BongoCatWindow(QtWidgets.QWidget):
 
         # Setup variables for idle animation
         self.current_image = "idle"  # Can be "idle", "left", or "right"
-        self.max_stretch = 1.08  # 8% taller at maximum
-        self.min_stretch = 0.98   # 2% shorter at minimum
+        self.max_stretch = anim.IDLE_MAX_STRETCH
+        self.min_stretch = anim.IDLE_MIN_STRETCH
         self.animation_time = 0   # Position in the sine wave
         self.stretch_factor = 1.0
-        
+
         # Set up a timer for the idle animation at 60fps for smoother animation
         self.idle_timer = QtCore.QTimer(self)
         self.idle_timer.timeout.connect(self.update_idle_stretch)
-        self.idle_timer.start(16)  # ~60 fps
+        self.idle_timer.start(anim.IDLE_TIMER_MS)
 
     def update_idle_stretch(self):
         """Update the cat's stretch animation frame with smooth transitions."""
         if self.is_paused:
             return
-            
+
         # Use sine wave for smoother animation
-        angle = (self.animation_time if hasattr(self, 'animation_time') else 0) + 0.05
+        angle = (self.animation_time if hasattr(self, 'animation_time') else 0) + anim.IDLE_ANIMATION_SPEED
         self.animation_time = angle % (2 * math.pi)
         
         # Smoother sine wave oscillation
@@ -183,9 +184,9 @@ class BongoCatWindow(QtWidgets.QWidget):
         # Get original dimensions
         original_width = source_pixmap.width()
         original_height = source_pixmap.height()
-        
+
         # Define fixed bottom percentage
-        fixed_bottom_percent = 0.25
+        fixed_bottom_percent = anim.FIXED_BOTTOM_PERCENT
         fixed_bottom_height = int(original_height * fixed_bottom_percent)
         stretchable_height = original_height - fixed_bottom_height
         
@@ -262,7 +263,7 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Setup footer styling."""
         self.footer_widget.setStyleSheet(f"""
             QWidget {{
-                background: rgba(40, 44, 52, {self.config.footer_alpha * 2.55});
+                background: rgba(40, 44, 52, {self.config.footer_alpha * anim.FOOTER_ALPHA_MULTIPLIER});
                 border-radius: 12px;
                 padding: 4px;
             }}
@@ -365,7 +366,7 @@ class BongoCatWindow(QtWidgets.QWidget):
         self.footer_opacity_effect = QtWidgets.QGraphicsOpacityEffect(self.footer_widget)
         self.footer_widget.setGraphicsEffect(self.footer_opacity_effect)
         self.footer_animation = QtCore.QPropertyAnimation(self.footer_opacity_effect, b"opacity")
-        self.footer_animation.setDuration(300)
+        self.footer_animation.setDuration(anim.FOOTER_ANIMATION_DURATION_MS)
         self.footer_animation.finished.connect(self.onFooterAnimationFinished)
         self.footer_opacity_effect.setOpacity(0.0)
 
@@ -373,7 +374,7 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Initialize combo counter variables."""
         self.combo_count = 0
         self.last_slap_time = 0
-        self.combo_timeout = 800
+        self.combo_timeout = anim.COMBO_TIMEOUT_MS
         self.combo_label: Optional[QtWidgets.QLabel] = None
         self.combo_animation_group: Optional[QtCore.QParallelAnimationGroup] = None
         self.combo_timeout_timer = QtCore.QTimer()
@@ -383,9 +384,9 @@ class BongoCatWindow(QtWidgets.QWidget):
     def setup_total_slaps_label(self):
         """Setup the total slaps label."""
         self.total_slaps_label = QtWidgets.QLabel(self.container)
-        self.total_slaps_label.setStyleSheet("""
+        self.total_slaps_label.setStyleSheet(f"""
             color: white;
-            font: 600 14px 'Segoe UI';
+            font: 600 {anim.TOTAL_SLAPS_FONT_SIZE}px 'Segoe UI';
             background-color: rgba(40, 44, 52, 0.85);
             padding: 4px 12px;
             border-radius: 8px;
@@ -394,9 +395,9 @@ class BongoCatWindow(QtWidgets.QWidget):
         self.total_slaps_label.hide()
 
         shadow_effect = QGraphicsDropShadowEffect()
-        shadow_effect.setBlurRadius(8)
+        shadow_effect.setBlurRadius(anim.TOTAL_SLAPS_SHADOW_BLUR)
         shadow_effect.setOffset(0, 2)
-        shadow_effect.setColor(QtGui.QColor(0, 0, 0, 100))
+        shadow_effect.setColor(QtGui.QColor(0, 0, 0, anim.TOTAL_SLAPS_SHADOW_ALPHA))
         self.total_slaps_label.setGraphicsEffect(shadow_effect)
 
     def setup_animations(self):
@@ -412,13 +413,13 @@ class BongoCatWindow(QtWidgets.QWidget):
     #  Image Handling
     # ----------------------
     def load_and_fix_image(self, path):
-        """Loads an image and rotates it back -16 degrees to fix tilt."""
+        """Loads an image and rotates it back to fix tilt."""
         try:
             pixmap = QtGui.QPixmap(resource_path(path))
             if pixmap.isNull():
                 raise FileNotFoundError(f"Failed to load image: {path}")
             transform = QtGui.QTransform()
-            transform.rotate(-13)
+            transform.rotate(anim.IMAGE_ROTATION_DEGREES)
             return pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
         except (FileNotFoundError, Exception) as e:
             logger.error(f"Error loading image {path}: {e}")
@@ -455,24 +456,19 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Update the combo counter style based on count."""
         if not self.combo_label:
             return
-            
-        font_size = min(14 + (self.combo_count // 3), 20)
-        
+
+        font_size = anim.get_combo_font_size(self.combo_count)
+
         # Determine color based on combo count
-        if self.combo_count < 30:
-            color = "255, 255, 100"  # Yellow
-        elif self.combo_count < 60:
-            color = "255, 150, 50"   # Orange
-        else:
-            color = "255, 50, 50"    # Red
-        
+        color = anim.get_combo_color(self.combo_count)
+
         self.original_color = color
-        
+
         # Create a drop shadow effect for better visibility without background
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(4)
+        shadow.setBlurRadius(anim.COMBO_SHADOW_BLUR_RADIUS)
         shadow.setOffset(0, 0)
-        shadow.setColor(QtGui.QColor(0, 0, 0, 200))
+        shadow.setColor(QtGui.QColor(0, 0, 0, anim.COMBO_SHADOW_COLOR_ALPHA))
         self.combo_label.setGraphicsEffect(shadow)
         
         # Use transparent background with text-shadow for better visibility
@@ -493,12 +489,12 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Setup animations for the combo counter."""
         if not self.combo_label:
             return
-            
-        x = self.cat_width - self.combo_label.width() - 10
-        y = 10
-        
+
+        x = self.cat_width - self.combo_label.width() - anim.COMBO_POSITION_RIGHT_MARGIN
+        y = anim.COMBO_POSITION_TOP_MARGIN
+
         if self.config.always_show_points and self.total_slaps_label.isVisible():
-            y = self.total_slaps_label.y() + self.total_slaps_label.height() + 5
+            y = self.total_slaps_label.y() + self.total_slaps_label.height() + anim.COMBO_POSITION_OFFSET_BELOW_TOTAL
         
         self.combo_label.move(x, y)
         
@@ -510,36 +506,36 @@ class BongoCatWindow(QtWidgets.QWidget):
         
         # Initial pop effect
         current_geometry = self.combo_label.geometry()
-        expanded_width = int(current_geometry.width() * 1.2)
-        expanded_height = int(current_geometry.height() * 1.2)
+        expanded_width = int(current_geometry.width() * anim.COMBO_POP_SCALE)
+        expanded_height = int(current_geometry.height() * anim.COMBO_POP_SCALE)
         x_offset = (expanded_width - current_geometry.width()) // 2
         y_offset = (expanded_height - current_geometry.height()) // 2
-        
+
         expanded_geometry = QtCore.QRect(
             current_geometry.x() - x_offset,
             current_geometry.y() - y_offset,
             expanded_width,
             expanded_height
         )
-        
+
         pop_animation = QtCore.QPropertyAnimation(self.combo_label, b"geometry")
-        pop_animation.setDuration(150)
+        pop_animation.setDuration(anim.COMBO_POP_DURATION_MS)
         pop_animation.setStartValue(expanded_geometry)
         pop_animation.setEndValue(current_geometry)
         pop_animation.setEasingCurve(QtCore.QEasingCurve.OutBack)
-        
+
         bounce_animation = QtCore.QPropertyAnimation(self.combo_label, b"pos")
-        bounce_animation.setDuration(150)
-        bounce_animation.setStartValue(QtCore.QPoint(x, y + 5))
+        bounce_animation.setDuration(anim.COMBO_POP_DURATION_MS)
+        bounce_animation.setStartValue(QtCore.QPoint(x, y + anim.COMBO_BOUNCE_OFFSET))
         bounce_animation.setEndValue(QtCore.QPoint(x, y))
         bounce_animation.setEasingCurve(QtCore.QEasingCurve.OutBack)
         
         self.combo_animation_group.addAnimation(pop_animation)
         self.combo_animation_group.addAnimation(bounce_animation)
-        
-        if self.combo_count >= 60:
+
+        if anim.is_overload(self.combo_count):
             self.setup_overload_animation(x, y)
-        
+
         self.combo_animation_group.start()
         
     def setup_overload_animation(self, x: int, y: int):
@@ -549,25 +545,25 @@ class BongoCatWindow(QtWidgets.QWidget):
             
         self.combo_original_pos = QtCore.QPoint(x, y)
         self.combo_original_size = QtCore.QSize(self.combo_label.width(), self.combo_label.height())
-        
+
         if not hasattr(self, 'overload_timer'):
             self.overload_timer = QtCore.QTimer()
             self.overload_timer.timeout.connect(self.update_overload_animation)
         else:
             self.overload_timer.stop()
-        
+
         self.animation_time = 0
         self.pulse_direction = 1
-        self.overload_timer.start(33)
+        self.overload_timer.start(anim.OVERLOAD_TIMER_MS)
 
     def update_overload_animation(self):
         """Update the overload animation effect for high combos."""
-        if not self.combo_label or self.combo_count < 60:
+        if not self.combo_label or not anim.is_overload(self.combo_count):
             if hasattr(self, 'overload_timer'):
                 self.overload_timer.stop()
             return
-        
-        self.animation_time += 0.08 * self.pulse_direction
+
+        self.animation_time += anim.OVERLOAD_ANIMATION_SPEED * self.pulse_direction
         if self.animation_time >= 1.0:
             self.animation_time = 1.0
             self.pulse_direction = -1
@@ -582,42 +578,42 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Update visual effects for overload animation."""
         if not self.combo_label:
             return
-            
-        scale_factor = 0.9 + wave * 0.3
+
+        scale_factor = anim.OVERLOAD_SCALE_MIN + wave * (anim.OVERLOAD_SCALE_MAX - anim.OVERLOAD_SCALE_MIN)
         new_width = int(self.combo_original_size.width() * scale_factor)
         new_height = int(self.combo_original_size.height() * scale_factor)
-        
+
         x_offset = (new_width - self.combo_original_size.width()) // 2
         y_offset = (new_height - self.combo_original_size.height()) // 2
-        
-        wobble_x = int(math.sin(self.animation_time * 3 * math.pi) * 8)
-        wobble_y = int(math.cos(self.animation_time * 2 * math.pi) * 5)
-        
+
+        wobble_x = int(math.sin(self.animation_time * anim.OVERLOAD_WOBBLE_X_FREQUENCY * math.pi) * anim.OVERLOAD_WOBBLE_X_AMPLITUDE)
+        wobble_y = int(math.cos(self.animation_time * anim.OVERLOAD_WOBBLE_Y_FREQUENCY * math.pi) * anim.OVERLOAD_WOBBLE_Y_AMPLITUDE)
+
         shake_amount = 0
-        if wave > 0.8 or wave < 0.2:
-            shake_amount = random.randint(-2, 2)
+        if wave > anim.OVERLOAD_SHAKE_THRESHOLD_HIGH or wave < anim.OVERLOAD_SHAKE_THRESHOLD_LOW:
+            shake_amount = random.randint(-anim.OVERLOAD_SHAKE_MAX, anim.OVERLOAD_SHAKE_MAX)
         
         new_x = self.combo_original_pos.x() - x_offset + wobble_x + shake_amount
         new_y = self.combo_original_pos.y() - y_offset + wobble_y + shake_amount
         
         self.combo_label.setGeometry(new_x, new_y, new_width, new_height)
-        
+
         # Parse color components
         r, g, b = map(int, self.original_color.split(','))
-        intensity = 0.6 + wave * 0.9
+        intensity = anim.OVERLOAD_INTENSITY_MIN + wave * (anim.OVERLOAD_INTENSITY_MAX - anim.OVERLOAD_INTENSITY_MIN)
         r_new = min(255, int(r * intensity))
         g_new = min(255, int(g * intensity))
         b_new = min(255, int(b * intensity))
-        
+
         # Shadow gets darker with pulse
-        shadow_intensity = int(100 + wave * 100)
+        shadow_intensity = int(anim.OVERLOAD_SHADOW_ALPHA_MIN + wave * (anim.OVERLOAD_SHADOW_ALPHA_MAX - anim.OVERLOAD_SHADOW_ALPHA_MIN))
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(4 + wave * 3)
+        shadow.setBlurRadius(anim.OVERLOAD_SHADOW_BLUR_MIN + wave * (anim.OVERLOAD_SHADOW_BLUR_MAX - anim.OVERLOAD_SHADOW_BLUR_MIN))
         shadow.setOffset(0, 0)
         shadow.setColor(QtGui.QColor(0, 0, 0, shadow_intensity))
         self.combo_label.setGraphicsEffect(shadow)
-        
-        font_size = min(14 + (self.combo_count // 3), 20)
+
+        font_size = anim.get_combo_font_size(self.combo_count)
         
         self.combo_label.setStyleSheet(f"""
             QLabel {{
@@ -647,20 +643,20 @@ class BongoCatWindow(QtWidgets.QWidget):
         fade_effect = QtWidgets.QGraphicsOpacityEffect(self.combo_label)
         self.combo_label.setGraphicsEffect(fade_effect)
         fade_effect.setOpacity(1.0)
-        
+
         fade_animation = QtCore.QPropertyAnimation(fade_effect, b"opacity")
-        fade_animation.setDuration(300)
+        fade_animation.setDuration(anim.COMBO_FADE_DURATION_MS)
         fade_animation.setStartValue(1.0)
         fade_animation.setEndValue(0.0)
         fade_animation.setEasingCurve(QtCore.QEasingCurve.OutQuad)
-        
+
         current_geometry = self.combo_label.geometry()
         scale_animation = QtCore.QPropertyAnimation(self.combo_label, b"geometry")
-        scale_animation.setDuration(300)
+        scale_animation.setDuration(anim.COMBO_FADE_DURATION_MS)
         scale_animation.setStartValue(current_geometry)
-        
-        target_width = int(current_geometry.width() * 0.8)
-        target_height = int(current_geometry.height() * 0.8)
+
+        target_width = int(current_geometry.width() * anim.COMBO_FADE_SCALE_FACTOR)
+        target_height = int(current_geometry.height() * anim.COMBO_FADE_SCALE_FACTOR)
         x_offset = (current_geometry.width() - target_width) // 2
         y_offset = (current_geometry.height() - target_height) // 2
         
@@ -1084,13 +1080,13 @@ class BongoCatWindow(QtWidgets.QWidget):
         # Update the image with current stretch factor
         self.update_stretched_image()
 
-        # Restart the slapping timer (100 ms)
+        # Restart the slapping timer
         if self.slapping_timer.isActive():
             self.slapping_timer.stop()
-        self.slapping_timer.start(100)
+        self.slapping_timer.start(anim.SLAP_RESET_DELAY_MS)
 
     def reset_image(self):
-        """Revert to idle image after 100 ms."""
+        """Revert to idle image after slap delay."""
         self.current_image = "idle"
         self.update_stretched_image()
 
@@ -1099,11 +1095,11 @@ class BongoCatWindow(QtWidgets.QWidget):
         self.total_slaps_label.setText(str(self.config.slaps))
         # Ensure the label is wide enough for the text
         self.total_slaps_label.adjustSize()
-        width = max(50, self.total_slaps_label.width())  # Min width of 50px
+        width = max(anim.TOTAL_SLAPS_MIN_WIDTH, self.total_slaps_label.width())
         self.total_slaps_label.setFixedWidth(width)
         # Position in top-right corner with padding
-        x = self.cat_width - width - 10  # 10px padding from right
-        y = 10  # 10px from top
+        x = self.cat_width - width - anim.TOTAL_SLAPS_RIGHT_MARGIN
+        y = anim.TOTAL_SLAPS_TOP_MARGIN
         self.total_slaps_label.move(x, y)
         self.total_slaps_label.show()
         self.total_slaps_label.raise_()
@@ -1115,14 +1111,14 @@ class BongoCatWindow(QtWidgets.QWidget):
 
         # Create the shadow label first (will be positioned behind)
         shadow_label = QtWidgets.QLabel(self.container)
-        shadow_label.setStyleSheet("""
-            QLabel {
-                color: rgba(0, 0, 0, 0.85);
-                font: 700 14px 'Segoe UI';
+        shadow_label.setStyleSheet(f"""
+            QLabel {{
+                color: {anim.FLOATING_SHADOW_COLOR};
+                font: 700 {anim.FLOATING_FONT_SIZE}px 'Segoe UI';
                 background-color: transparent;
                 padding: 4px 8px;
                 border: none;
-            }
+            }}
         """)
         shadow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         shadow_label.setText("+1")
@@ -1130,29 +1126,29 @@ class BongoCatWindow(QtWidgets.QWidget):
 
         # Create the main +1 label with off-white color
         slap_label = QtWidgets.QLabel(self.container)
-        slap_label.setStyleSheet("""
-            QLabel {
-                color: rgba(245, 245, 245, 0.95);
-                font: 700 14px 'Segoe UI';
+        slap_label.setStyleSheet(f"""
+            QLabel {{
+                color: {anim.FLOATING_MAIN_COLOR};
+                font: 700 {anim.FLOATING_FONT_SIZE}px 'Segoe UI';
                 background-color: transparent;
                 padding: 4px 8px;
                 border: none;
-            }
+            }}
         """)
         slap_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         slap_label.setText("+1")
         slap_label.adjustSize()
-        
+
         # Position the labels with slight randomization
         x = (self.cat_width - slap_label.width()) // 2
-        x += random.randint(-15, 15)
-        y = self.cat_height // 2 + 10
-        
-        # Position shadow 2px offset from main label (more pronounced)
-        shadow_label.move(x + 2, y + 2)
+        x += random.randint(anim.FLOATING_HORIZONTAL_OFFSET_MIN, anim.FLOATING_HORIZONTAL_OFFSET_MAX)
+        y = self.cat_height // 2 + anim.FLOATING_VERTICAL_CENTER_OFFSET
+
+        # Position shadow offset from main label
+        shadow_label.move(x + anim.FLOATING_SHADOW_OFFSET_X, y + anim.FLOATING_SHADOW_OFFSET_Y)
         shadow_label.show()
         shadow_label.raise_()
-        
+
         # Position main label
         slap_label.move(x, y)
         slap_label.show()
@@ -1160,23 +1156,23 @@ class BongoCatWindow(QtWidgets.QWidget):
 
         # Create rise animation for shadow label
         shadow_rise_animation = QtCore.QPropertyAnimation(shadow_label, b"pos")
-        shadow_rise_animation.setDuration(400)
+        shadow_rise_animation.setDuration(anim.FLOATING_ANIMATION_DURATION_MS)
         shadow_rise_animation.setEasingCurve(QtCore.QEasingCurve.OutQuad)
         shadow_rise_animation.setStartValue(shadow_label.pos())
-        
+
         # Create rise animation for main label
         main_rise_animation = QtCore.QPropertyAnimation(slap_label, b"pos")
-        main_rise_animation.setDuration(400)
+        main_rise_animation.setDuration(anim.FLOATING_ANIMATION_DURATION_MS)
         main_rise_animation.setEasingCurve(QtCore.QEasingCurve.OutQuad)
         main_rise_animation.setStartValue(slap_label.pos())
-        
+
         # If we have an active combo, move towards it
         if self.combo_count > 1 and self.combo_label:
             main_target_pos = self.combo_label.pos()
-            shadow_target_pos = QtCore.QPoint(main_target_pos.x() + 2, main_target_pos.y() + 2)
+            shadow_target_pos = QtCore.QPoint(main_target_pos.x() + anim.FLOATING_SHADOW_OFFSET_X, main_target_pos.y() + anim.FLOATING_SHADOW_OFFSET_Y)
         else:
-            main_target_pos = QtCore.QPoint(x, y - 40)
-            shadow_target_pos = QtCore.QPoint(x + 2, y - 38)  # Maintain 2px offset
+            main_target_pos = QtCore.QPoint(x, y - anim.FLOATING_RISE_DISTANCE)
+            shadow_target_pos = QtCore.QPoint(x + anim.FLOATING_SHADOW_OFFSET_X, y - anim.FLOATING_RISE_DISTANCE + anim.FLOATING_SHADOW_OFFSET_Y)
         
         main_rise_animation.setEndValue(main_target_pos)
         shadow_rise_animation.setEndValue(shadow_target_pos)
@@ -1185,16 +1181,16 @@ class BongoCatWindow(QtWidgets.QWidget):
         main_fade_effect = QtWidgets.QGraphicsOpacityEffect(slap_label)
         slap_label.setGraphicsEffect(main_fade_effect)
         main_fade_animation = QtCore.QPropertyAnimation(main_fade_effect, b"opacity")
-        main_fade_animation.setDuration(400)
-        main_fade_animation.setStartValue(1.0)
-        main_fade_animation.setEndValue(0.0 if self.combo_count > 1 else 0.8)
-        
+        main_fade_animation.setDuration(anim.FLOATING_ANIMATION_DURATION_MS)
+        main_fade_animation.setStartValue(anim.FLOATING_FADE_START)
+        main_fade_animation.setEndValue(anim.FLOATING_FADE_END_COMBO if self.combo_count > 1 else anim.FLOATING_FADE_END_SINGLE)
+
         shadow_fade_effect = QtWidgets.QGraphicsOpacityEffect(shadow_label)
         shadow_label.setGraphicsEffect(shadow_fade_effect)
         shadow_fade_animation = QtCore.QPropertyAnimation(shadow_fade_effect, b"opacity")
-        shadow_fade_animation.setDuration(400)
-        shadow_fade_animation.setStartValue(1.0)
-        shadow_fade_animation.setEndValue(0.0 if self.combo_count > 1 else 0.8)
+        shadow_fade_animation.setDuration(anim.FLOATING_ANIMATION_DURATION_MS)
+        shadow_fade_animation.setStartValue(anim.FLOATING_FADE_START)
+        shadow_fade_animation.setEndValue(anim.FLOATING_FADE_END_COMBO if self.combo_count > 1 else anim.FLOATING_FADE_END_SINGLE)
         
         # Group animations
         animation_group = QtCore.QParallelAnimationGroup()
