@@ -1,0 +1,13 @@
+# Include all data files for packaging
+
+include README.md
+include LICENSE
+include bongo.ini
+include requirements.txt
+include requirements-dev.txt
+
+recursive-include img *.png
+recursive-include skins *.png *.json
+recursive-include sounds *.wav *.ogg *.mp3
+
+recursive-include bongo_cat *.py

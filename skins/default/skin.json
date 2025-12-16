@@ -1,0 +1,12 @@
+{
+  "name": "Classic Bongo Cat",
+  "author": "luinbytes",
+  "version": "1.0.0",
+  "description": "The original Bongo Cat design",
+  "images": {
+    "idle": "cat-rest.png",
+    "left": "cat-left.png",
+    "right": "cat-right.png"
+  },
+  "rotation_degrees": -13
+}

@@ -26,6 +26,9 @@ class ConfigManager:
         startup_with_windows: Launch on system startup
         max_slaps: Maximum slap count (0 = unlimited)
         invert_cat: Mirror cat horizontally
+        current_skin: Currently selected skin ID
+        sound_enabled: Whether sound effects are enabled
+        sound_volume: Sound volume (0-100)
     """
 
     DEFAULT_CONFIG = {
@@ -37,7 +40,10 @@ class ConfigManager:
             "floating_points": "true",
             "startup_with_windows": "false",
             "max_slaps": "0",
-            "invert_cat": "false"
+            "invert_cat": "false",
+            "current_skin": "default",
+            "sound_enabled": "true",
+            "sound_volume": "50"
         }
     }
 
@@ -62,6 +68,9 @@ class ConfigManager:
         self.startup_with_windows = False
         self.max_slaps = 0
         self.invert_cat = False
+        self.current_skin = "default"
+        self.sound_enabled = True
+        self.sound_volume = 50
 
         self.load()
 
@@ -117,6 +126,9 @@ class ConfigManager:
             self.startup_with_windows = self._safe_getboolean("Settings", "startup_with_windows", False)
             self.max_slaps = max(0, self._safe_getint("Settings", "max_slaps"))
             self.invert_cat = self._safe_getboolean("Settings", "invert_cat", False)
+            self.current_skin = self._safe_getstring("Settings", "current_skin", "default")
+            self.sound_enabled = self._safe_getboolean("Settings", "sound_enabled", True)
+            self.sound_volume = max(0, min(100, self._safe_getint("Settings", "sound_volume", 50)))
 
         except (ValueError, KeyError, AttributeError) as e:
             logger.error(f"Error loading settings: {e}")
@@ -133,6 +145,9 @@ class ConfigManager:
         self.startup_with_windows = False
         self.max_slaps = 0
         self.invert_cat = False
+        self.current_skin = "default"
+        self.sound_enabled = True
+        self.sound_volume = 50
 
     def _safe_getboolean(self, section: str, key: str, default: bool = False) -> bool:
         """Safely get a boolean value from config.
@@ -167,6 +182,22 @@ class ConfigManager:
         except (ValueError, TypeError):
             return default
 
+    def _safe_getstring(self, section: str, key: str, default: str = "") -> str:
+        """Safely get a string value from config.
+
+        Args:
+            section: Config section name
+            key: Config key name
+            default: Default value if parsing fails
+
+        Returns:
+            String value from config or default
+        """
+        try:
+            return self.config.get(section, key, fallback=default)
+        except (ValueError, TypeError):
+            return default
+
     def save(self) -> None:
         """Save current configuration to file."""
         try:
@@ -178,6 +209,9 @@ class ConfigManager:
             self.config["Settings"]["startup_with_windows"] = str(self.startup_with_windows).lower()
             self.config["Settings"]["max_slaps"] = str(self.max_slaps)
             self.config["Settings"]["invert_cat"] = str(self.invert_cat).lower()
+            self.config["Settings"]["current_skin"] = self.current_skin
+            self.config["Settings"]["sound_enabled"] = str(self.sound_enabled).lower()
+            self.config["Settings"]["sound_volume"] = str(self.sound_volume)
 
             with open(self.config_path, "w") as config_file:
                 self.config.write(config_file)
