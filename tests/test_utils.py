@@ -54,11 +54,12 @@ class TestResourcePath(unittest.TestCase):
 class TestLoggingSetup(unittest.TestCase):
     """Test logging setup."""
 
-    def test_logger_exists(self):
-        """Test that logger is created."""
-        from bongo_cat import logger
+    def test_logger_creation(self):
+        """Test that setup_logging creates a logger."""
+        from bongo_cat import setup_logging
+        logger = setup_logging("TestLogger")
         self.assertIsNotNone(logger)
-        self.assertEqual(logger.name, "BongoCat")
+        self.assertEqual(logger.name, "TestLogger")
 
 
 if __name__ == '__main__':
