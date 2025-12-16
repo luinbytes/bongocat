@@ -1228,13 +1228,13 @@ class BongoCatWindow(QtWidgets.QWidget):
             self.settings_panel.activateWindow()
         else:
             # Update current values
-            self.hidden_footer_checkbox.setChecked(self.config.hidden_footer)
-            self.footer_alpha_slider.setValue(self.config.footer_alpha)
-            self.always_show_points_checkbox.setChecked(self.config.always_show_points)
-            self.floating_points_checkbox.setChecked(self.config.floating_points)
-            self.startup_with_windows_checkbox.setChecked(self.config.startup_with_windows)
-            self.invert_cat_checkbox.setChecked(self.config.invert_cat)
-            self.max_slaps_spinbox.setValue(self.config.max_slaps)
+            self.config.hidden_footer_checkbox.setChecked(self.config.hidden_footer)
+            self.config.footer_alpha_slider.setValue(self.config.footer_alpha)
+            self.config.always_show_points_checkbox.setChecked(self.config.always_show_points)
+            self.config.floating_points_checkbox.setChecked(self.config.floating_points)
+            self.config.startup_with_windows_checkbox.setChecked(self.config.startup_with_windows)
+            self.config.invert_cat_checkbox.setChecked(self.config.invert_cat)
+            self.config.max_slaps_spinbox.setValue(self.config.max_slaps)
             
             # Position the settings panel near the main window
             main_pos = self.pos()
@@ -1249,13 +1249,13 @@ class BongoCatWindow(QtWidgets.QWidget):
         old_invert_cat = self.config.invert_cat
 
         # Update settings from UI
-        self.config.hidden_footer = self.hidden_footer_checkbox.isChecked()
-        self.config.footer_alpha = self.footer_alpha_slider.value()
-        self.config.always_show_points = self.always_show_points_checkbox.isChecked()
-        self.config.floating_points = self.floating_points_checkbox.isChecked()
-        self.config.startup_with_windows = self.startup_with_windows_checkbox.isChecked()
-        self.config.max_slaps = self.max_slaps_spinbox.value()
-        self.config.invert_cat = self.invert_cat_checkbox.isChecked()
+        self.config.hidden_footer = self.config.hidden_footer_checkbox.isChecked()
+        self.config.footer_alpha = self.config.footer_alpha_slider.value()
+        self.config.always_show_points = self.config.always_show_points_checkbox.isChecked()
+        self.config.floating_points = self.config.floating_points_checkbox.isChecked()
+        self.config.startup_with_windows = self.config.startup_with_windows_checkbox.isChecked()
+        self.config.max_slaps = self.config.max_slaps_spinbox.value()
+        self.config.invert_cat = self.config.invert_cat_checkbox.isChecked()
 
         # Apply settings
         self.config.save()
