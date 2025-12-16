@@ -3,9 +3,9 @@
 import sys
 from PyQt5 import QtWidgets
 
-from .utils import setup_logging
-from .ui import BongoCatWindow
-from .input import InputManager
+from bongo_cat.utils import setup_logging
+from bongo_cat.ui import BongoCatWindow
+from bongo_cat.input import InputManager
 
 # Set up logging
 logger = setup_logging()
