@@ -176,6 +176,11 @@ pip install -r requirements-dev.txt
 
 ### Build Commands
 
+**IMPORTANT**: Install build dependencies first:
+```bash
+pip install -r requirements-dev.txt
+```
+
 #### Windows
 
 **Option 1: Automated Build (Recommended)**
@@ -186,6 +191,11 @@ build_windows.bat
 **Option 2: Manual Build**
 ```batch
 python build.py
+```
+
+**Quick Build** (if dependencies already installed):
+```batch
+pyinstaller --clean --noconfirm bongo_cat.spec
 ```
 
 **Outputs:**
@@ -205,6 +215,11 @@ chmod +x build_unix.sh
 python3 build.py
 ```
 
+**Quick Build** (if dependencies already installed):
+```bash
+pyinstaller --clean --noconfirm bongo_cat.spec
+```
+
 **Outputs:**
 - `dist/BongoCat.app` - Application bundle
 - `dist/BongoCat-arm64.dmg` - DMG installer (if hdiutil available)
@@ -220,6 +235,11 @@ chmod +x build_unix.sh
 **Option 2: Manual Build**
 ```bash
 python3 build.py
+```
+
+**Quick Build** (if dependencies already installed):
+```bash
+pyinstaller --clean --noconfirm bongo_cat.spec
 ```
 
 **Outputs:**
@@ -596,8 +616,22 @@ Chain inputs within **800ms** to build combos:
 
 ### Build Issues
 
-**Issue**: PyInstaller not found
-- **Fix**: `pip install pyinstaller>=5.0`
+**Issue**: PyInstaller not found / not recognized
+- **Error**: `'pyinstaller' is not recognized as an internal or external command`
+- **Cause**: PyInstaller not installed or not in PATH
+- **Fix Option 1**: Install build dependencies:
+  ```bash
+  pip install -r requirements-dev.txt
+  ```
+- **Fix Option 2**: Install PyInstaller directly:
+  ```bash
+  pip install pyinstaller>=5.0
+  ```
+- **Fix Option 3**: Use Python module syntax (always works):
+  ```bash
+  python -m PyInstaller --clean --noconfirm bongo_cat.spec
+  ```
+- **Note**: The build script now checks for installation failures and reports them
 
 **Issue**: Build fails with import errors
 - **Fix**: Reinstall all deps: `pip install -r requirements.txt`

@@ -51,10 +51,29 @@ class BongoCatBuilder:
         if self.platform == "win32":
             requirements.append("pywin32>=306")
 
+        failed = []
         for req in requirements:
-            subprocess.run([sys.executable, "-m", "pip", "install", req], check=False)
+            print(f"  Installing {req}...")
+            result = subprocess.run(
+                [sys.executable, "-m", "pip", "install", req],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode != 0:
+                print(f"  ⚠️  Warning: Failed to install {req}")
+                failed.append(req)
+            else:
+                print(f"  ✓ {req} installed")
 
-        print("✓ Dependencies installed\n")
+        if failed:
+            print(f"\n⚠️  Some dependencies failed to install: {', '.join(failed)}")
+            print("Please install them manually:")
+            for req in failed:
+                print(f"  pip install {req}")
+            return False
+
+        print("\n✓ All dependencies installed\n")
+        return True
 
     def build_executable(self):
         """Build the executable using PyInstaller."""
@@ -224,7 +243,11 @@ exec "${HERE}/usr/bin/bongocat" "$@"
         self.clean()
 
         # Install dependencies
-        self.install_dependencies()
+        if not self.install_dependencies():
+            print("❌ Dependency installation failed!")
+            print("Please install dependencies manually and try again:")
+            print("  pip install -r requirements-dev.txt")
+            return 1
 
         # Build executable
         if not self.build_executable():
