@@ -3,6 +3,7 @@
 import os
 import logging
 from typing import Dict, Optional
+from ..utils.resources import resource_path
 
 logger = logging.getLogger("BongoCat")
 
@@ -64,7 +65,9 @@ class SoundManager:
 
     def _load_sounds(self) -> None:
         """Load all available sound files from the sounds directory."""
-        if not self.enabled or not os.path.exists(self.sounds_dir):
+        sounds_dir_abs = resource_path(self.sounds_dir)
+        if not self.enabled or not os.path.exists(sounds_dir_abs):
+            logger.warning(f"Sounds directory not found: {sounds_dir_abs}")
             return
 
         sound_files = {
@@ -76,7 +79,7 @@ class SoundManager:
         }
 
         for sound_name, filename in sound_files.items():
-            sound_path = os.path.join(self.sounds_dir, filename)
+            sound_path = resource_path(os.path.join(self.sounds_dir, filename))
 
             if os.path.exists(sound_path):
                 try:
@@ -86,6 +89,8 @@ class SoundManager:
                     logger.info(f"Loaded sound: {sound_name}")
                 except Exception as e:
                     logger.error(f"Failed to load sound {sound_name}: {e}")
+            else:
+                logger.warning(f"Sound file not found: {sound_path}")
 
     def play(self, sound_name: str, volume_override: Optional[float] = None) -> None:
         """Play a sound effect.

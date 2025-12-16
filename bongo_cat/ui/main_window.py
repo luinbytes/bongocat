@@ -61,6 +61,7 @@ class BongoCatWindow(QtWidgets.QWidget):
         self.is_hovering = False
         self.drag_position = None
         self.current_side = "left"
+        self.active_notifications = []  # Track active achievement notifications
         
         # Setup window and UI
         self.setup_window()
@@ -112,9 +113,14 @@ class BongoCatWindow(QtWidgets.QWidget):
         # Use skin manager to get current skin images
         current_skin = self.skin_manager.current_skin
         if current_skin:
-            self.idle_pixmap_original = self.load_and_fix_image(current_skin.images['idle'])
-            self.slap_pixmap_left_original = self.load_and_fix_image(current_skin.images['left'])
-            self.slap_pixmap_right_original = self.load_and_fix_image(current_skin.images['right'])
+            # Join skin path with image filename to get full path
+            idle_path = os.path.join(current_skin.path, current_skin.images['idle'])
+            left_path = os.path.join(current_skin.path, current_skin.images['left'])
+            right_path = os.path.join(current_skin.path, current_skin.images['right'])
+
+            self.idle_pixmap_original = self.load_and_fix_image(resource_path(idle_path))
+            self.slap_pixmap_left_original = self.load_and_fix_image(resource_path(left_path))
+            self.slap_pixmap_right_original = self.load_and_fix_image(resource_path(right_path))
         else:
             # Fallback to default images
             self.idle_pixmap_original = self.load_and_fix_image(resource_path("img/cat-rest.png"))
@@ -804,7 +810,8 @@ class BongoCatWindow(QtWidgets.QWidget):
         # Use current skin for tray icon
         current_skin = self.skin_manager.current_skin
         if current_skin:
-            self.tray_icon.setIcon(QtGui.QIcon(current_skin.images['idle']))
+            icon_path = os.path.join(current_skin.path, current_skin.images['idle'])
+            self.tray_icon.setIcon(QtGui.QIcon(resource_path(icon_path)))
         else:
             self.tray_icon.setIcon(QtGui.QIcon(resource_path("img/cat-rest.png")))
         self.tray_icon.setToolTip("Bongo Cat")
@@ -1274,7 +1281,8 @@ class BongoCatWindow(QtWidgets.QWidget):
             self.update_stretched_image()
             current_skin = self.skin_manager.current_skin
             if current_skin:
-                self.tray_icon.setIcon(QtGui.QIcon(current_skin.images['idle']))
+                icon_path = os.path.join(current_skin.path, current_skin.images['idle'])
+                self.tray_icon.setIcon(QtGui.QIcon(resource_path(icon_path)))
 
         # Update sound settings
         self.config.sound_enabled = self.config.sound_enabled_checkbox.isChecked()
@@ -1599,12 +1607,22 @@ class BongoCatWindow(QtWidgets.QWidget):
         notif.setAlignment(Qt.AlignmentFlag.AlignCenter)
         notif.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
 
-        # Position at top center of window
+        # Calculate Y position based on existing notifications
         notif.adjustSize()
+        y_offset = 20
+        for existing_notif in self.active_notifications:
+            if existing_notif and not existing_notif.isHidden():
+                y_offset += existing_notif.height() + 10  # 10px spacing between notifications
+
+        # Position at top center of window, stacking vertically
         notif.move(
             (self.width() - notif.width()) // 2,
-            20
+            y_offset
         )
+
+        # Add to active notifications list
+        self.active_notifications.append(notif)
+
         notif.show()
         notif.raise_()  # Ensure it's on top
 
@@ -1652,6 +1670,9 @@ class BongoCatWindow(QtWidgets.QWidget):
                 notif.fade_out_animation = fade_out
 
                 def cleanup():
+                    # Remove from active notifications
+                    if notif in self.active_notifications:
+                        self.active_notifications.remove(notif)
                     if notif and not notif.isHidden():
                         notif.deleteLater()
                     if timer:
@@ -1661,11 +1682,15 @@ class BongoCatWindow(QtWidgets.QWidget):
                 fade_out.start()
             else:
                 # No effect, just delete
+                if notif in self.active_notifications:
+                    self.active_notifications.remove(notif)
                 notif.deleteLater()
                 if timer:
                     timer.deleteLater()
         except RuntimeError:
             # Widget already deleted
+            if notif in self.active_notifications:
+                self.active_notifications.remove(notif)
             if timer:
                 timer.deleteLater()
             pass
