@@ -1,10 +1,10 @@
 # Sound Effects
 
-This directory is for optional sound effect files. Bongo Cat will work perfectly fine without any sounds.
+This directory contains default sound effects for Bongo Cat. These are simple, programmatically-generated sounds that you can use or replace with your own.
 
-## Supported Sound Files
+## Included Sound Files
 
-Place your sound files here with these exact names:
+The following sound files are included by default:
 
 - **slap.wav** - Regular slap sound (plays on most inputs)
 - **slap_alt.wav** - Alternate slap sound (randomly selected)
@@ -33,9 +33,17 @@ You can:
 3. Right-click → Settings → Sound Effects → Enable
 4. Adjust volume in Settings → Sound Volume
 
+## Replacing Default Sounds
+
+The included sounds are simple beeps generated programmatically. To use custom sounds:
+
+1. Replace any of the WAV files with your own sounds
+2. Keep the same filenames
+3. Restart Bongo Cat to hear the new sounds
+
 ## Notes
 
 - Sounds are completely optional
 - Missing sound files will be silently skipped
 - The app gracefully handles missing pygame/mixer
-- Sound files are NOT included by default (copyright reasons)
+- Default sounds are programmatically generated (no copyright issues)
