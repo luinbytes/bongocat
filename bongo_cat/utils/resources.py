@@ -32,8 +32,14 @@ def resource_path(relative_path: str) -> str:
         return os.path.join(appdata_path, relative_path)
 
     if getattr(sys, '_MEIPASS', None) is not None:
+        # PyInstaller bundled executable
         base_path = getattr(sys, '_MEIPASS')
     else:
-        base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        # Development mode - go up to project root
+        # __file__ is bongo_cat/utils/resources.py
+        # dirname(__file__) -> bongo_cat/utils
+        # dirname(dirname(__file__)) -> bongo_cat
+        # dirname(dirname(dirname(__file__))) -> project root
+        base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
     return os.path.join(base_path, relative_path)
