@@ -9,10 +9,20 @@ block_cipher = None
 
 # Collect all data files
 datas = []
-datas += [('img', 'img')]
-datas += [('skins', 'skins')]
-datas += [('sounds', 'sounds')]
-datas += [('bongo.ini', '.')]
+
+# Add required directories
+if os.path.exists('img'):
+    datas += [('img', 'img')]
+if os.path.exists('skins'):
+    datas += [('skins', 'skins')]
+
+# Add optional directories (sound effects are optional)
+if os.path.exists('sounds'):
+    datas += [('sounds', 'sounds')]
+
+# Add config file if it exists
+if os.path.exists('bongo.ini'):
+    datas += [('bongo.ini', '.')]
 
 # Collect PyQt5 data files
 datas += collect_data_files('PyQt5')
