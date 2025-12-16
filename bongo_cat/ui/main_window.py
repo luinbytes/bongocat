@@ -723,7 +723,14 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Handle mouse release events."""
         if event.button() == Qt.MouseButton.LeftButton:
             self.setCursor(Qt.CursorShape.ArrowCursor)
-            
+
+            # Save window position if it was dragged
+            if self.drag_position:
+                pos = self.pos()
+                self.config.window_x = pos.x()
+                self.config.window_y = pos.y()
+                self.config.save()
+
             # Recreate the opacity effect to ensure it's valid
             self.footer_opacity_effect = QtWidgets.QGraphicsOpacityEffect(self.footer_widget)
             self.footer_widget.setGraphicsEffect(self.footer_opacity_effect)
@@ -860,11 +867,26 @@ class BongoCatWindow(QtWidgets.QWidget):
     def restore_window_position(self):
         """Restore the window position from settings."""
         screen = QtWidgets.QApplication.primaryScreen()
-        if screen:
-            geometry = screen.geometry()
+        if not screen:
+            return
+
+        geometry = screen.geometry()
+
+        # Check if we have a saved position
+        if self.config.window_x >= 0 and self.config.window_y >= 0:
+            # Ensure the saved position is still on screen
+            x = min(max(0, self.config.window_x), geometry.width() - self.width())
+            y = min(max(0, self.config.window_y), geometry.height() - self.height())
+            self.move(x, y)
+        else:
+            # First launch - center the window
             x = (geometry.width() - self.width()) // 2
             y = (geometry.height() - self.height()) // 2
             self.move(x, y)
+            # Save this initial position
+            self.config.window_x = x
+            self.config.window_y = y
+            self.config.save()
 
     # ----------------------
     #  Configuration

@@ -29,6 +29,8 @@ class ConfigManager:
         current_skin: Currently selected skin ID
         sound_enabled: Whether sound effects are enabled
         sound_volume: Sound volume (0-100)
+        window_x: X position of window (-1 = center on first launch)
+        window_y: Y position of window (-1 = center on first launch)
     """
 
     DEFAULT_CONFIG = {
@@ -43,7 +45,9 @@ class ConfigManager:
             "invert_cat": "false",
             "current_skin": "default",
             "sound_enabled": "true",
-            "sound_volume": "50"
+            "sound_volume": "50",
+            "window_x": "-1",
+            "window_y": "-1"
         }
     }
 
@@ -71,6 +75,8 @@ class ConfigManager:
         self.current_skin = "default"
         self.sound_enabled = True
         self.sound_volume = 50
+        self.window_x = -1
+        self.window_y = -1
 
         self.load()
 
@@ -129,6 +135,8 @@ class ConfigManager:
             self.current_skin = self._safe_getstring("Settings", "current_skin", "default")
             self.sound_enabled = self._safe_getboolean("Settings", "sound_enabled", True)
             self.sound_volume = max(0, min(100, self._safe_getint("Settings", "sound_volume", 50)))
+            self.window_x = self._safe_getint("Settings", "window_x", -1)
+            self.window_y = self._safe_getint("Settings", "window_y", -1)
 
         except (ValueError, KeyError, AttributeError) as e:
             logger.error(f"Error loading settings: {e}")
@@ -148,6 +156,8 @@ class ConfigManager:
         self.current_skin = "default"
         self.sound_enabled = True
         self.sound_volume = 50
+        self.window_x = -1
+        self.window_y = -1
 
     def _safe_getboolean(self, section: str, key: str, default: bool = False) -> bool:
         """Safely get a boolean value from config.
@@ -212,6 +222,8 @@ class ConfigManager:
             self.config["Settings"]["current_skin"] = self.current_skin
             self.config["Settings"]["sound_enabled"] = str(self.sound_enabled).lower()
             self.config["Settings"]["sound_volume"] = str(self.sound_volume)
+            self.config["Settings"]["window_x"] = str(self.window_x)
+            self.config["Settings"]["window_y"] = str(self.window_y)
 
             with open(self.config_path, "w") as config_file:
                 self.config.write(config_file)
