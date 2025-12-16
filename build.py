@@ -44,7 +44,7 @@ class BongoCatBuilder:
         requirements = [
             "pyinstaller>=5.0",
             "PyQt5>=5.15.10",
-            "pygame>=2.5.2",
+            "pygame>=2.6.0",
             "pynput>=1.7.6",
         ]
 

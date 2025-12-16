@@ -213,10 +213,12 @@ Creates:
 ```
 pyinstaller>=5.0
 PyQt5>=5.15.10
-pygame>=2.5.2
+pygame>=2.6.0
 pynput>=1.7.6
 pywin32>=306 (Windows only)
 ```
+
+**Note**: pygame 2.6.0+ is required for Python 3.12 compatibility (distutils was removed in Python 3.12).
 
 #### Manual Build:
 ```bash

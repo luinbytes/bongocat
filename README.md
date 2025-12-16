@@ -5,7 +5,7 @@
 **Bongo Cat Desktop Buddy** is an interactive desktop pet that lives on your screen and responds to *every* keystroke, mouse click, and controller button press by slapping its adorable little paws! Watch as your furry companion reacts to your inputs in real-time with customizable skins, sound effects, and an achievement system.
 
 [![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/luinbytes/bongocat/releases)
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python](https://img.shields.io/badge/python-3.8--3.12-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ---
@@ -70,7 +70,9 @@ python -m bongo_cat
 
 ### Prerequisites
 
-- **Python 3.8+** ([Download Python](https://www.python.org/downloads/))
+- **Python 3.8 - 3.12** ([Download Python](https://www.python.org/downloads/))
+  - ✅ Tested on Python 3.8, 3.9, 3.10, 3.11, 3.12
+  - ⚠️ Python 3.12 requires pygame 2.6.0+ (automatically installed)
 - **pip** (comes with Python)
 - **git** (optional, for cloning)
 
@@ -115,7 +117,7 @@ pip install -r requirements-dev.txt
 
 **Dependencies Installed:**
 - `PyQt5>=5.15.10` - GUI framework
-- `pygame>=2.5.2` - Controller input and sound
+- `pygame>=2.6.0` - Controller input and sound (Python 3.12 compatible)
 - `pynput>=1.7.6` - Global keyboard/mouse hooks
 - `pywin32>=306` - Windows-specific features (Windows only)
 
@@ -563,6 +565,13 @@ Chain inputs within **800ms** to build combos:
 
 **Issue**: Error about PyQt5
 - **Fix**: `pip install PyQt5==5.15.10`
+
+**Issue**: pygame installation fails on Python 3.12
+- **Error**: `ModuleNotFoundError: No module named 'distutils.msvccompiler'`
+- **Cause**: pygame 2.5.2 doesn't support Python 3.12 (distutils removed)
+- **Fix**: Update requirements: `pip install pygame>=2.6.0`
+- **Or**: Use Python 3.11 or earlier
+- **Note**: Our requirements.txt now uses pygame 2.6.0+ for Python 3.12 compatibility
 
 ### Input Not Detected
 
