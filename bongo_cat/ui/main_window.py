@@ -12,7 +12,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtWidgets import QGraphicsDropShadowEffect, QSystemTrayIcon, QMenu, QAction
 from PyQt5.QtCore import QSettings, Qt
 
-from ..models import ConfigManager
+from ..models import ConfigManager, SkinManager, SoundManager, AchievementManager
 from ..utils import resource_path
 from .settings_panel import SettingsPanelWidget
 from ..animations import constants as anim
@@ -44,7 +44,18 @@ class BongoCatWindow(QtWidgets.QWidget):
         
         # Load configuration
         self.config = ConfigManager()
-        
+
+        # Initialize managers
+        self.skin_manager = SkinManager()
+        self.skin_manager.load_skin(self.config.current_skin)
+
+        self.sound_manager = SoundManager(
+            enabled=self.config.sound_enabled,
+            volume=self.config.sound_volume / 100.0
+        )
+
+        self.achievement_manager = AchievementManager()
+
         # Initialize state variables
         self.is_paused = False
         self.is_hovering = False
@@ -98,9 +109,17 @@ class BongoCatWindow(QtWidgets.QWidget):
 
     def setup_cat_images(self):
         """Load and prepare cat images."""
-        self.idle_pixmap_original = self.load_and_fix_image(resource_path("img/cat-rest.png"))
-        self.slap_pixmap_left_original = self.load_and_fix_image(resource_path("img/cat-left.png"))
-        self.slap_pixmap_right_original = self.load_and_fix_image(resource_path("img/cat-right.png"))
+        # Use skin manager to get current skin images
+        current_skin = self.skin_manager.current_skin
+        if current_skin:
+            self.idle_pixmap_original = self.load_and_fix_image(current_skin.images['idle'])
+            self.slap_pixmap_left_original = self.load_and_fix_image(current_skin.images['left'])
+            self.slap_pixmap_right_original = self.load_and_fix_image(current_skin.images['right'])
+        else:
+            # Fallback to default images
+            self.idle_pixmap_original = self.load_and_fix_image(resource_path("img/cat-rest.png"))
+            self.slap_pixmap_left_original = self.load_and_fix_image(resource_path("img/cat-left.png"))
+            self.slap_pixmap_right_original = self.load_and_fix_image(resource_path("img/cat-right.png"))
         
         # Working copies that will be stretched
         self.idle_pixmap = QtGui.QPixmap(self.idle_pixmap_original)
@@ -782,7 +801,12 @@ class BongoCatWindow(QtWidgets.QWidget):
     def setup_system_tray(self):
         """Setup the system tray icon and menu."""
         self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(QtGui.QIcon(resource_path("img/cat-rest.png")))
+        # Use current skin for tray icon
+        current_skin = self.skin_manager.current_skin
+        if current_skin:
+            self.tray_icon.setIcon(QtGui.QIcon(current_skin.images['idle']))
+        else:
+            self.tray_icon.setIcon(QtGui.QIcon(resource_path("img/cat-rest.png")))
         self.tray_icon.setToolTip("Bongo Cat")
         
         tray_menu = QMenu()
@@ -891,106 +915,6 @@ class BongoCatWindow(QtWidgets.QWidget):
     # ----------------------
     #  Configuration
     # ----------------------
-    def load_config(self):
-        """Load or initialize the configuration file."""
-        self.config = configparser.ConfigParser()
-        config_path = resource_path("bongo.ini")
-
-        default_config = {
-            "Settings": {
-                "slaps": "0",
-                "hidden_footer": "true",
-                "footer_alpha": "50",
-                "always_show_points": "false",
-                "floating_points": "true",
-                "startup_with_windows": "false",
-                "max_slaps": "0",
-                "invert_cat": "false"
-            }
-        }
-
-        def safe_getboolean(section, key, default=False):
-            try:
-                value = self.config.get(section, key, fallback=str(default)).lower()
-                return value in ('true', '1', 'yes', 'on')
-            except (ValueError, AttributeError):
-                return default
-
-        def safe_getint(section, key, default=0):
-            try:
-                return int(self.config.get(section, key, fallback=str(default)))
-            except (ValueError, TypeError):
-                return default
-
-        if not os.path.exists(config_path):
-            self.config.read_dict(default_config)
-            try:
-                with open(config_path, "w") as config_file:
-                    self.config.write(config_file)
-            except (IOError, OSError) as e:
-                logger.error(f"Error creating config file at {config_path}: {e}")
-                self.config.read_dict(default_config)
-        else:
-            try:
-                self.config.read(config_path)
-                for section, values in default_config.items():
-                    if section not in self.config:
-                        self.config[section] = {}
-                    for key, value in values.items():
-                        if key not in self.config[section]:
-                            self.config[section][key] = value
-                with open(config_path, "w") as config_file:
-                    self.config.write(config_file)
-            except (IOError, OSError, configparser.Error) as e:
-                logger.error(f"Error reading config file from {config_path}: {e}")
-                self.config.read_dict(default_config)
-
-        try:
-            self.config.slaps = max(0, safe_getint("Settings", "slaps"))
-            self.config.hidden_footer = safe_getboolean("Settings", "hidden_footer", True)
-            self.config.footer_alpha = max(0, min(100, safe_getint("Settings", "footer_alpha", 50)))
-            self.config.always_show_points = safe_getboolean("Settings", "always_show_points", False)
-            self.config.floating_points = safe_getboolean("Settings", "floating_points", True)
-            self.config.startup_with_windows = safe_getboolean("Settings", "startup_with_windows", False)
-            self.config.max_slaps = max(0, safe_getint("Settings", "max_slaps"))
-            self.config.invert_cat = safe_getboolean("Settings", "invert_cat", False)
-            
-            # Update the count label with the loaded slaps count
-            if hasattr(self, 'count_label'):
-                self.count_label.setText(f"{self.config.slaps}")
-                
-            # Show total slaps if always_show_points is enabled
-            if self.config.always_show_points and hasattr(self, 'total_slaps_label'):
-                self.show_total_slaps()
-        except (ValueError, KeyError, AttributeError) as e:
-            logger.error(f"Error loading settings: {e}")
-            self.config.slaps = 0
-            self.config.hidden_footer = True
-            self.config.footer_alpha = 50
-            self.config.always_show_points = False
-            self.config.floating_points = True
-            self.config.startup_with_windows = False
-            self.config.max_slaps = 0
-            self.config.invert_cat = False
-
-    def save_config(self):
-        """Save the current configuration to the file."""
-        config_path = resource_path("bongo.ini")
-        try:
-            self.config["Settings"]["slaps"] = str(self.config.slaps)
-            self.config["Settings"]["hidden_footer"] = str(self.config.hidden_footer).lower()
-            self.config["Settings"]["footer_alpha"] = str(self.config.footer_alpha)
-            self.config["Settings"]["always_show_points"] = str(self.config.always_show_points).lower()
-            self.config["Settings"]["floating_points"] = str(self.config.floating_points).lower()
-            self.config["Settings"]["startup_with_windows"] = str(self.config.startup_with_windows).lower()
-            self.config["Settings"]["max_slaps"] = str(self.config.max_slaps)
-            self.config["Settings"]["invert_cat"] = str(self.config.invert_cat).lower()
-
-            with open(config_path, "w") as config_file:
-                self.config.write(config_file)
-        except (IOError, OSError) as e:
-            logger.error(f"Error saving config to {config_path}: {e}")
-
     def open_ini_file(self):
         """Open the .ini file in the default editor."""
         config_path = resource_path("bongo.ini")
@@ -1065,7 +989,14 @@ class BongoCatWindow(QtWidgets.QWidget):
             return
             
         self.config.slaps += 1
-        
+
+        # Check for slap-based achievements
+        newly_unlocked = self.achievement_manager.check_slap_count(self.config.slaps)
+        for achievement in newly_unlocked:
+            self.show_achievement_notification(achievement)
+            if self.sound_manager.enabled:
+                self.sound_manager.play('achievement')
+
         # Update combo count and reset timeout
         current_time = QtCore.QTime.currentTime().msecsSinceStartOfDay()
         if current_time - self.last_slap_time < self.combo_timeout:
@@ -1073,7 +1004,28 @@ class BongoCatWindow(QtWidgets.QWidget):
         else:
             self.combo_count = 1
         self.last_slap_time = current_time
-        
+
+        # Check for combo-based achievements
+        newly_unlocked_combo = self.achievement_manager.check_combo(self.combo_count)
+        for achievement in newly_unlocked_combo:
+            self.show_achievement_notification(achievement)
+            if self.sound_manager.enabled:
+                self.sound_manager.play('achievement')
+
+        # Play slap sound
+        if self.sound_manager.enabled:
+            # Alternate between slap sounds randomly
+            alternate = random.random() > 0.5
+            self.sound_manager.play_slap(alternate=alternate)
+
+        # Play combo sound at milestones
+        if self.combo_count in [10, 25, 50, 100]:
+            if self.sound_manager.enabled:
+                if self.combo_count >= 50:
+                    self.sound_manager.play('combo_high')
+                else:
+                    self.sound_manager.play('combo')
+
         # Reset the timeout timer
         self.combo_timeout_timer.stop()
         self.combo_timeout_timer.start(self.combo_timeout)
@@ -1257,7 +1209,16 @@ class BongoCatWindow(QtWidgets.QWidget):
             self.config.startup_with_windows_checkbox.setChecked(self.config.startup_with_windows)
             self.config.invert_cat_checkbox.setChecked(self.config.invert_cat)
             self.config.max_slaps_spinbox.setValue(self.config.max_slaps)
-            
+
+            # Update skin dropdown
+            current_index = self.config.skin_dropdown.findData(self.config.current_skin)
+            if current_index >= 0:
+                self.config.skin_dropdown.setCurrentIndex(current_index)
+
+            # Update sound settings
+            self.config.sound_enabled_checkbox.setChecked(self.config.sound_enabled)
+            self.config.sound_volume_slider.setValue(self.config.sound_volume)
+
             # Position the settings panel near the main window, ensuring it stays on screen
             screen = QtWidgets.QApplication.primaryScreen()
             if screen:
@@ -1302,6 +1263,24 @@ class BongoCatWindow(QtWidgets.QWidget):
         self.config.startup_with_windows = self.config.startup_with_windows_checkbox.isChecked()
         self.config.max_slaps = self.config.max_slaps_spinbox.value()
         self.config.invert_cat = self.config.invert_cat_checkbox.isChecked()
+
+        # Update skin
+        selected_skin_id = self.config.skin_dropdown.currentData()
+        if selected_skin_id != self.config.current_skin:
+            self.config.current_skin = selected_skin_id
+            self.skin_manager.load_skin(selected_skin_id)
+            # Reload images and tray icon
+            self.setup_cat_images()
+            self.update_stretched_image()
+            current_skin = self.skin_manager.current_skin
+            if current_skin:
+                self.tray_icon.setIcon(QtGui.QIcon(current_skin.images['idle']))
+
+        # Update sound settings
+        self.config.sound_enabled = self.config.sound_enabled_checkbox.isChecked()
+        self.config.sound_volume = self.config.sound_volume_slider.value()
+        self.sound_manager.enabled = self.config.sound_enabled
+        self.sound_manager.set_volume(self.config.sound_volume / 100.0)
 
         # Apply settings
         self.config.save()
@@ -1457,7 +1436,48 @@ class BongoCatWindow(QtWidgets.QWidget):
             padding: 2px;
         """)
         form_layout.addRow(self.create_settings_label("Max slap count:"), self.config.max_slaps_spinbox)
-        
+
+        # Skin selection
+        self.config.skin_dropdown = QtWidgets.QComboBox()
+        self.config.skin_dropdown.setStyleSheet("""
+            color: white;
+            background-color: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            padding: 4px;
+        """)
+        # Populate with available skins
+        for skin_id, skin_info in self.skin_manager.available_skins.items():
+            self.config.skin_dropdown.addItem(skin_info.name, skin_id)
+        # Set current selection
+        current_index = self.config.skin_dropdown.findData(self.config.current_skin)
+        if current_index >= 0:
+            self.config.skin_dropdown.setCurrentIndex(current_index)
+        form_layout.addRow(self.create_settings_label("Cat Skin:"), self.config.skin_dropdown)
+
+        # Sound enabled toggle
+        self.config.sound_enabled_checkbox = QtWidgets.QCheckBox()
+        self.config.sound_enabled_checkbox.setChecked(self.config.sound_enabled)
+        self.config.sound_enabled_checkbox.setStyleSheet("color: white;")
+        form_layout.addRow(self.create_settings_label("Enable Sounds:"), self.config.sound_enabled_checkbox)
+
+        # Sound volume slider
+        self.config.sound_volume_slider = QtWidgets.QSlider(Qt.Orientation.Horizontal)
+        self.config.sound_volume_slider.setRange(0, 100)
+        self.config.sound_volume_slider.setValue(self.config.sound_volume)
+        self.config.sound_volume_slider.setTickPosition(QtWidgets.QSlider.TickPosition.TicksBelow)
+        self.config.sound_volume_slider.setTickInterval(10)
+
+        sound_volume_layout = QtWidgets.QHBoxLayout()
+        sound_volume_layout.addWidget(self.config.sound_volume_slider)
+        self.config.sound_volume_value = QtWidgets.QLabel(f"{self.config.sound_volume}%")
+        self.config.sound_volume_value.setStyleSheet("color: white; min-width: 40px;")
+        sound_volume_layout.addWidget(self.config.sound_volume_value)
+        self.config.sound_volume_slider.valueChanged.connect(
+            lambda value: self.config.sound_volume_value.setText(f"{value}%")
+        )
+        form_layout.addRow(self.create_settings_label("Sound Volume:"), sound_volume_layout)
+
         main_layout.addLayout(form_layout)
         
         # Add buttons layout
@@ -1552,6 +1572,67 @@ class BongoCatWindow(QtWidgets.QWidget):
         reset_button.setStyleSheet("background-color: #e74c3c; color: white;")
         apply_button.setStyleSheet("background-color: #2ecc71; color: white;")
         close_button.setStyleSheet("background-color: #3498db; color: white;")
+
+    def show_achievement_notification(self, achievement):
+        """Show a notification when an achievement is unlocked.
+
+        Args:
+            achievement: Achievement object that was unlocked
+        """
+        # Create notification label
+        notif = QtWidgets.QLabel(self)
+        notif.setStyleSheet("""
+            QLabel {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 rgba(255, 215, 0, 230),
+                    stop:1 rgba(255, 165, 0, 230)
+                );
+                color: #2c3e50;
+                font: bold 14px 'Segoe UI';
+                padding: 12px 16px;
+                border-radius: 8px;
+                border: 2px solid rgba(255, 215, 0, 255);
+            }
+        """)
+        notif.setText(f"🏆 {achievement.name}\n{achievement.description}")
+        notif.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        # Position at top center of window
+        notif.adjustSize()
+        notif.move(
+            (self.width() - notif.width()) // 2,
+            20
+        )
+        notif.show()
+
+        # Fade in animation
+        opacity_effect = QtWidgets.QGraphicsOpacityEffect(notif)
+        notif.setGraphicsEffect(opacity_effect)
+
+        fade_in = QtCore.QPropertyAnimation(opacity_effect, b"opacity")
+        fade_in.setDuration(500)
+        fade_in.setStartValue(0.0)
+        fade_in.setEndValue(1.0)
+        fade_in.start()
+
+        # Auto-hide after 5 seconds
+        QtCore.QTimer.singleShot(5000, lambda: self.fade_out_notification(notif))
+
+    def fade_out_notification(self, notif):
+        """Fade out and remove notification.
+
+        Args:
+            notif: Notification label widget
+        """
+        opacity_effect = notif.graphicsEffect()
+        if opacity_effect:
+            fade_out = QtCore.QPropertyAnimation(opacity_effect, b"opacity")
+            fade_out.setDuration(500)
+            fade_out.setStartValue(1.0)
+            fade_out.setEndValue(0.0)
+            fade_out.finished.connect(notif.deleteLater)
+            fade_out.start()
 
     def create_settings_label(self, text):
         """Create a styled label for settings form layout."""
