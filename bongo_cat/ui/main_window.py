@@ -1597,6 +1597,7 @@ class BongoCatWindow(QtWidgets.QWidget):
         """)
         notif.setText(f"🏆 {achievement.name}\n{achievement.description}")
         notif.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        notif.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
 
         # Position at top center of window
         notif.adjustSize()
@@ -1605,6 +1606,7 @@ class BongoCatWindow(QtWidgets.QWidget):
             20
         )
         notif.show()
+        notif.raise_()  # Ensure it's on top
 
         # Fade in animation
         opacity_effect = QtWidgets.QGraphicsOpacityEffect(notif)
@@ -1614,25 +1616,59 @@ class BongoCatWindow(QtWidgets.QWidget):
         fade_in.setDuration(500)
         fade_in.setStartValue(0.0)
         fade_in.setEndValue(1.0)
+
+        # Store animation reference to prevent garbage collection
+        notif.fade_in_animation = fade_in
         fade_in.start()
 
-        # Auto-hide after 5 seconds
-        QtCore.QTimer.singleShot(5000, lambda: self.fade_out_notification(notif))
+        # Auto-hide after 5 seconds - use QTimer with proper connection
+        timer = QtCore.QTimer()
+        timer.setSingleShot(True)
+        timer.timeout.connect(lambda: self.fade_out_notification(notif, timer))
+        timer.start(5000)
 
-    def fade_out_notification(self, notif):
+    def fade_out_notification(self, notif, timer=None):
         """Fade out and remove notification.
 
         Args:
             notif: Notification label widget
+            timer: Optional timer to clean up
         """
-        opacity_effect = notif.graphicsEffect()
-        if opacity_effect:
-            fade_out = QtCore.QPropertyAnimation(opacity_effect, b"opacity")
-            fade_out.setDuration(500)
-            fade_out.setStartValue(1.0)
-            fade_out.setEndValue(0.0)
-            fade_out.finished.connect(notif.deleteLater)
-            fade_out.start()
+        # Check if widget still exists and is valid
+        if notif is None or not notif.isVisible():
+            if timer:
+                timer.deleteLater()
+            return
+
+        try:
+            opacity_effect = notif.graphicsEffect()
+            if opacity_effect:
+                fade_out = QtCore.QPropertyAnimation(opacity_effect, b"opacity")
+                fade_out.setDuration(500)
+                fade_out.setStartValue(1.0)
+                fade_out.setEndValue(0.0)
+
+                # Store animation reference and connect cleanup
+                notif.fade_out_animation = fade_out
+
+                def cleanup():
+                    if notif and not notif.isHidden():
+                        notif.deleteLater()
+                    if timer:
+                        timer.deleteLater()
+
+                fade_out.finished.connect(cleanup)
+                fade_out.start()
+            else:
+                # No effect, just delete
+                notif.deleteLater()
+                if timer:
+                    timer.deleteLater()
+        except RuntimeError:
+            # Widget already deleted
+            if timer:
+                timer.deleteLater()
+            pass
 
     def create_settings_label(self, text):
         """Create a styled label for settings form layout."""
