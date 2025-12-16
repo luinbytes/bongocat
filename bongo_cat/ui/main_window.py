@@ -1258,9 +1258,33 @@ class BongoCatWindow(QtWidgets.QWidget):
             self.config.invert_cat_checkbox.setChecked(self.config.invert_cat)
             self.config.max_slaps_spinbox.setValue(self.config.max_slaps)
             
-            # Position the settings panel near the main window
-            main_pos = self.pos()
-            self.settings_panel.move(main_pos.x() + self.width() + 10, main_pos.y())
+            # Position the settings panel near the main window, ensuring it stays on screen
+            screen = QtWidgets.QApplication.primaryScreen()
+            if screen:
+                screen_geometry = screen.geometry()
+                main_pos = self.pos()
+                panel_width = self.settings_panel.width()
+                panel_height = self.settings_panel.height()
+
+                # Try to position to the right of the cat first
+                x = main_pos.x() + self.width() + 10
+                y = main_pos.y()
+
+                # If it would go off the right edge, position to the left instead
+                if x + panel_width > screen_geometry.width():
+                    x = main_pos.x() - panel_width - 10
+
+                # If still off screen (left edge), center it on screen
+                if x < 0:
+                    x = (screen_geometry.width() - panel_width) // 2
+
+                # Ensure Y is on screen
+                if y + panel_height > screen_geometry.height():
+                    y = screen_geometry.height() - panel_height - 10
+                if y < 0:
+                    y = 10
+
+                self.settings_panel.move(x, y)
             
             # Show and activate the panel
             self.settings_panel.show()
