@@ -1,5 +1,6 @@
 import sys
 import os
+import subprocess
 import threading
 import configparser
 import random
@@ -469,12 +470,12 @@ class BongoCatWindow(QtWidgets.QWidget):
         try:
             pixmap = QtGui.QPixmap(resource_path(path))
             if pixmap.isNull():
-                raise Exception(f"Failed to load image: {path}")
+                raise FileNotFoundError(f"Failed to load image: {path}")
             transform = QtGui.QTransform()
             transform.rotate(-13)
             return pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
-        except Exception as e:
-            print(f"Error loading image {path}: {e}")
+        except (FileNotFoundError, Exception) as e:
+            logger.error(f"Error loading image {path}: {e}")
             fallback = QtGui.QPixmap(100, 100)
             fallback.fill(QtGui.QColor(255, 0, 0))
             return fallback
@@ -948,13 +949,13 @@ class BongoCatWindow(QtWidgets.QWidget):
             try:
                 value = self.config.get(section, key, fallback=str(default)).lower()
                 return value in ('true', '1', 'yes', 'on')
-            except:
+            except (ValueError, AttributeError):
                 return default
 
         def safe_getint(section, key, default=0):
             try:
                 return int(self.config.get(section, key, fallback=str(default)))
-            except:
+            except (ValueError, TypeError):
                 return default
 
         if not os.path.exists(config_path):
@@ -962,8 +963,8 @@ class BongoCatWindow(QtWidgets.QWidget):
             try:
                 with open(config_path, "w") as config_file:
                     self.config.write(config_file)
-            except Exception as e:
-                print(f"Error creating config file: {e}")
+            except (IOError, OSError) as e:
+                logger.error(f"Error creating config file at {config_path}: {e}")
                 self.config.read_dict(default_config)
         else:
             try:
@@ -976,8 +977,8 @@ class BongoCatWindow(QtWidgets.QWidget):
                             self.config[section][key] = value
                 with open(config_path, "w") as config_file:
                     self.config.write(config_file)
-            except Exception as e:
-                print(f"Error reading config file: {e}")
+            except (IOError, OSError, configparser.Error) as e:
+                logger.error(f"Error reading config file from {config_path}: {e}")
                 self.config.read_dict(default_config)
 
         try:
@@ -997,8 +998,8 @@ class BongoCatWindow(QtWidgets.QWidget):
             # Show total slaps if always_show_points is enabled
             if self.always_show_points and hasattr(self, 'total_slaps_label'):
                 self.show_total_slaps()
-        except Exception as e:
-            print(f"Error loading settings: {e}")
+        except (ValueError, KeyError, AttributeError) as e:
+            logger.error(f"Error loading settings: {e}")
             self.slaps = 0
             self.hidden_footer = True
             self.footer_alpha = 50
@@ -1020,17 +1021,29 @@ class BongoCatWindow(QtWidgets.QWidget):
             self.config["Settings"]["startup_with_windows"] = str(self.startup_with_windows).lower()
             self.config["Settings"]["max_slaps"] = str(self.max_slaps)
             self.config["Settings"]["invert_cat"] = str(self.invert_cat).lower()
-            
+
             with open(config_path, "w") as config_file:
                 self.config.write(config_file)
-        except Exception as e:
-            print(f"Error saving config: {e}")
+        except (IOError, OSError) as e:
+            logger.error(f"Error saving config to {config_path}: {e}")
 
     def open_ini_file(self):
         """Open the .ini file in the default editor."""
         config_path = resource_path("bongo.ini")
         if os.path.exists(config_path):
-            os.startfile(config_path)
+            try:
+                if sys.platform == 'win32':
+                    os.startfile(config_path)
+                elif sys.platform == 'darwin':
+                    subprocess.call(['open', config_path])
+                else:  # Linux and other Unix-like systems
+                    subprocess.call(['xdg-open', config_path])
+            except Exception as e:
+                logger.error(f"Failed to open config file: {e}")
+                QtWidgets.QMessageBox.warning(
+                    self, "Error",
+                    f"Could not open config file: {e}"
+                )
 
     # ----------------------
     #  Footer Fading
@@ -1566,11 +1579,11 @@ class BongoCatWindow(QtWidgets.QWidget):
         config_path = resource_path("bongo.ini")
         try:
             self.config["Settings"]["slaps"] = str(self.slaps)
-            
+
             with open(config_path, "w") as config_file:
                 self.config.write(config_file)
-        except Exception as e:
-            print(f"Error updating slap count: {e}")
+        except (IOError, OSError) as e:
+            logger.error(f"Error updating slap count in {config_path}: {e}")
 
 # ----------------------
 #  Global Listeners
@@ -1686,19 +1699,20 @@ def start_listeners(trigger_callback):
                     try:
                         joystick = pygame.joystick.Joystick(i)
                         joystick.init()
-                        
+
                         # Check buttons that might have been missed by events
                         for button_idx in range(joystick.get_numbuttons()):
                             button_state = joystick.get_button(button_idx)
                             button_id = f"joy{i}_button{button_idx}"
-                            
+
                             if button_state and button_id not in active_buttons:
                                 active_buttons.add(button_id)
                                 input_queue.append(1)
                             elif not button_state and button_id in active_buttons:
                                 active_buttons.remove(button_id)
-                    except:
-                        pass  # Skip any joystick that has issues
+                    except pygame.error as e:
+                        logger.debug(f"Skipping joystick {i} due to error: {e}")
+                        continue
                 
                 # Process the input queue
                 while input_queue:
@@ -1708,9 +1722,9 @@ def start_listeners(trigger_callback):
                 
                 # Ultra-short sleep to prevent CPU overload but still catch all inputs
                 time.sleep(0.001)  # 1ms polling interval
-                
-        except Exception as e:
-            print(f"Controller listener error: {e}")
+
+        except (pygame.error, Exception) as e:
+            logger.error(f"Controller listener error: {e}")
             # If pygame fails, disable it
             PYGAME_AVAILABLE = False
 
