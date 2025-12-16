@@ -114,6 +114,30 @@ class AchievementManager:
                 category="slaps",
                 requirement=10000
             ),
+            Achievement(
+                id="slaps_25000",
+                name="Quarter Century",
+                description="Reach 25,000 slaps",
+                icon="🎖️",
+                category="slaps",
+                requirement=25000
+            ),
+            Achievement(
+                id="slaps_50000",
+                name="Fifty Thousand Fury",
+                description="Reach 50,000 slaps",
+                icon="👑",
+                category="slaps",
+                requirement=50000
+            ),
+            Achievement(
+                id="slaps_100000",
+                name="One Hundred Thousand Legend",
+                description="Reach 100,000 slaps",
+                icon="🏆",
+                category="slaps",
+                requirement=100000
+            ),
 
             # Combo Achievements
             Achievement(
@@ -156,6 +180,30 @@ class AchievementManager:
                 category="combos",
                 requirement=200
             ),
+            Achievement(
+                id="combo_300",
+                name="Triple Century",
+                description="Achieve a 300x combo",
+                icon="🚀",
+                category="combos",
+                requirement=300
+            ),
+            Achievement(
+                id="combo_500",
+                name="Five Hundred Frenzy",
+                description="Achieve a 500x combo",
+                icon="🔮",
+                category="combos",
+                requirement=500
+            ),
+            Achievement(
+                id="combo_1000",
+                name="Legendary Combo",
+                description="Achieve a 1000x combo",
+                icon="💎",
+                category="combos",
+                requirement=1000
+            ),
 
             # Special Achievements
             Achievement(
@@ -181,6 +229,54 @@ class AchievementManager:
                 icon="💫",
                 category="special",
                 requirement=60
+            ),
+            Achievement(
+                id="weekend_warrior",
+                name="Weekend Warrior",
+                description="Slap on Saturday or Sunday",
+                icon="🎮",
+                category="special",
+                hidden=True
+            ),
+            Achievement(
+                id="dedication",
+                name="Dedicated",
+                description="Open Bongo Cat 10 times",
+                icon="📅",
+                category="special",
+                requirement=10
+            ),
+            Achievement(
+                id="persistence",
+                name="Persistence",
+                description="Open Bongo Cat 50 times",
+                icon="🎯",
+                category="special",
+                requirement=50
+            ),
+            Achievement(
+                id="devotion",
+                name="True Devotion",
+                description="Open Bongo Cat 100 times",
+                icon="💖",
+                category="special",
+                requirement=100
+            ),
+            Achievement(
+                id="speed_demon",
+                name="Speed Demon",
+                description="Reach 10 combo in under 2 seconds",
+                icon="⚡",
+                category="special",
+                hidden=True
+            ),
+            Achievement(
+                id="marathon_session",
+                name="Marathon Session",
+                description="Keep a 100+ combo for over 30 seconds",
+                icon="🏃",
+                category="special",
+                hidden=True
             ),
         ]
 
@@ -306,7 +402,9 @@ class AchievementManager:
             List of newly unlocked achievements
         """
         newly_unlocked = []
-        current_hour = datetime.now().hour
+        now = datetime.now()
+        current_hour = now.hour
+        current_weekday = now.weekday()  # 0 = Monday, 6 = Sunday
 
         # Night Owl: midnight to 3 AM
         if 0 <= current_hour < 3 and not self.achievements["night_owl"].unlocked:
@@ -317,6 +415,36 @@ class AchievementManager:
         if 5 <= current_hour < 7 and not self.achievements["early_bird"].unlocked:
             if self.unlock("early_bird"):
                 newly_unlocked.append(self.achievements["early_bird"])
+
+        # Weekend Warrior: Saturday (5) or Sunday (6)
+        if current_weekday >= 5 and not self.achievements["weekend_warrior"].unlocked:
+            if self.unlock("weekend_warrior"):
+                newly_unlocked.append(self.achievements["weekend_warrior"])
+
+        return newly_unlocked
+
+    def check_launch_count(self, launch_count: int) -> List[Achievement]:
+        """Check and unlock launch count achievements.
+
+        Args:
+            launch_count: Total number of times app has been launched
+
+        Returns:
+            List of newly unlocked achievements
+        """
+        newly_unlocked = []
+
+        if launch_count >= 10 and not self.achievements["dedication"].unlocked:
+            if self.unlock("dedication"):
+                newly_unlocked.append(self.achievements["dedication"])
+
+        if launch_count >= 50 and not self.achievements["persistence"].unlocked:
+            if self.unlock("persistence"):
+                newly_unlocked.append(self.achievements["persistence"])
+
+        if launch_count >= 100 and not self.achievements["devotion"].unlocked:
+            if self.unlock("devotion"):
+                newly_unlocked.append(self.achievements["devotion"])
 
         return newly_unlocked
 

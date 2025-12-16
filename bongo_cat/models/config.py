@@ -47,7 +47,8 @@ class ConfigManager:
             "sound_enabled": "true",
             "sound_volume": "50",
             "window_x": "-1",
-            "window_y": "-1"
+            "window_y": "-1",
+            "launch_count": "0"
         }
     }
 
@@ -77,6 +78,7 @@ class ConfigManager:
         self.sound_volume = 50
         self.window_x = -1
         self.window_y = -1
+        self.launch_count = 0
 
         self.load()
 
@@ -137,6 +139,7 @@ class ConfigManager:
             self.sound_volume = max(0, min(100, self._safe_getint("Settings", "sound_volume", 50)))
             self.window_x = self._safe_getint("Settings", "window_x", -1)
             self.window_y = self._safe_getint("Settings", "window_y", -1)
+            self.launch_count = max(0, self._safe_getint("Settings", "launch_count", 0))
 
         except (ValueError, KeyError, AttributeError) as e:
             logger.error(f"Error loading settings: {e}")
@@ -158,6 +161,7 @@ class ConfigManager:
         self.sound_volume = 50
         self.window_x = -1
         self.window_y = -1
+        self.launch_count = 0
 
     def _safe_getboolean(self, section: str, key: str, default: bool = False) -> bool:
         """Safely get a boolean value from config.
@@ -224,6 +228,7 @@ class ConfigManager:
             self.config["Settings"]["sound_volume"] = str(self.sound_volume)
             self.config["Settings"]["window_x"] = str(self.window_x)
             self.config["Settings"]["window_y"] = str(self.window_y)
+            self.config["Settings"]["launch_count"] = str(self.launch_count)
 
             with open(self.config_path, "w") as config_file:
                 self.config.write(config_file)

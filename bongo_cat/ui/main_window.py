@@ -75,7 +75,25 @@ class BongoCatWindow(QtWidgets.QWidget):
         # Show total slaps at startup if enabled
         if self.config.always_show_points:
             self.show_total_slaps()
-        
+
+        # Increment launch count and check achievements
+        self.config.launch_count += 1
+        self.config.save()
+
+        # Check for time-based achievements
+        time_achievements = self.achievement_manager.check_time_based()
+        for achievement in time_achievements:
+            self.show_achievement_notification(achievement)
+            if self.sound_manager.enabled:
+                self.sound_manager.play('achievement')
+
+        # Check for launch count achievements
+        launch_achievements = self.achievement_manager.check_launch_count(self.config.launch_count)
+        for achievement in launch_achievements:
+            self.show_achievement_notification(achievement)
+            if self.sound_manager.enabled:
+                self.sound_manager.play('achievement')
+
         logger.info("BongoCatWindow initialized")
 
     # ----------------------
@@ -1640,9 +1658,10 @@ class BongoCatWindow(QtWidgets.QWidget):
         fade_in.start()
 
         # Auto-hide after 5 seconds - use QTimer with proper connection
-        timer = QtCore.QTimer()
+        timer = QtCore.QTimer(self)  # Parent to self to prevent garbage collection
         timer.setSingleShot(True)
         timer.timeout.connect(lambda: self.fade_out_notification(notif, timer))
+        notif.timer = timer  # Also store on widget for extra safety
         timer.start(5000)
 
     def fade_out_notification(self, notif, timer=None):
