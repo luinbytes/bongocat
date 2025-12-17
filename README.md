@@ -755,7 +755,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **GitHub Issues**: [Report bugs or request features](https://github.com/luinbytes/bongocat/issues)
 - **Discussions**: [Community discussions](https://github.com/luinbytes/bongocat/discussions)
-- **Email**: [your-email@example.com]
+- **Email**: [0x6c75@protonmail.com]
 
 ---
 
