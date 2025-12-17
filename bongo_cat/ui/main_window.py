@@ -61,7 +61,8 @@ class BongoCatWindow(QtWidgets.QWidget):
         self.is_hovering = False
         self.drag_position = None
         self.current_side = "left"
-        self.active_notifications = []  # Track active achievement notifications
+        self.notification_queue = []  # Queue of achievements waiting to be shown
+        self.current_notification = None  # Currently displaying notification widget
         
         # Setup window and UI
         self.setup_window()
@@ -1600,11 +1601,27 @@ class BongoCatWindow(QtWidgets.QWidget):
         close_button.setStyleSheet("background-color: #3498db; color: white;")
 
     def show_achievement_notification(self, achievement):
-        """Show a notification when an achievement is unlocked.
+        """Queue an achievement notification for display.
 
         Args:
             achievement: Achievement object that was unlocked
         """
+        # Add to queue
+        self.notification_queue.append(achievement)
+
+        # Start processing queue if no notification is currently showing
+        if self.current_notification is None:
+            self._process_notification_queue()
+
+    def _process_notification_queue(self):
+        """Process the next achievement notification in the queue."""
+        # If queue is empty or notification already showing, do nothing
+        if not self.notification_queue or self.current_notification is not None:
+            return
+
+        # Get next achievement from queue
+        achievement = self.notification_queue.pop(0)
+
         # Create notification label
         notif = QtWidgets.QLabel(self)
         notif.setStyleSheet("""
@@ -1625,21 +1642,21 @@ class BongoCatWindow(QtWidgets.QWidget):
         notif.setAlignment(Qt.AlignmentFlag.AlignCenter)
         notif.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
 
-        # Calculate Y position based on existing notifications
+        # Calculate size and position
         notif.adjustSize()
-        y_offset = 20
-        for existing_notif in self.active_notifications:
-            if existing_notif and not existing_notif.isHidden():
-                y_offset += existing_notif.height() + 10  # 10px spacing between notifications
 
-        # Position at top center of window, stacking vertically
-        notif.move(
-            (self.width() - notif.width()) // 2,
-            y_offset
-        )
+        # Ensure notification stays within window bounds
+        x_pos = max(10, (self.width() - notif.width()) // 2)
+        y_pos = 20
 
-        # Add to active notifications list
-        self.active_notifications.append(notif)
+        # Make sure it doesn't go off right edge
+        if x_pos + notif.width() > self.width() - 10:
+            x_pos = self.width() - notif.width() - 10
+
+        notif.move(x_pos, y_pos)
+
+        # Set as current notification
+        self.current_notification = notif
 
         notif.show()
         notif.raise_()  # Ensure it's on top
@@ -1665,7 +1682,7 @@ class BongoCatWindow(QtWidgets.QWidget):
         timer.start(5000)
 
     def fade_out_notification(self, notif, timer=None):
-        """Fade out and remove notification.
+        """Fade out and remove notification, then process next in queue.
 
         Args:
             notif: Notification label widget
@@ -1675,6 +1692,9 @@ class BongoCatWindow(QtWidgets.QWidget):
         if notif is None or not notif.isVisible():
             if timer:
                 timer.deleteLater()
+            self.current_notification = None
+            # Process next notification in queue
+            self._process_notification_queue()
             return
 
         try:
@@ -1689,30 +1709,31 @@ class BongoCatWindow(QtWidgets.QWidget):
                 notif.fade_out_animation = fade_out
 
                 def cleanup():
-                    # Remove from active notifications
-                    if notif in self.active_notifications:
-                        self.active_notifications.remove(notif)
+                    # Clean up widget and timer
                     if notif and not notif.isHidden():
                         notif.deleteLater()
                     if timer:
                         timer.deleteLater()
 
+                    # Clear current notification and process next in queue
+                    self.current_notification = None
+                    self._process_notification_queue()
+
                 fade_out.finished.connect(cleanup)
                 fade_out.start()
             else:
                 # No effect, just delete
-                if notif in self.active_notifications:
-                    self.active_notifications.remove(notif)
                 notif.deleteLater()
                 if timer:
                     timer.deleteLater()
+                self.current_notification = None
+                self._process_notification_queue()
         except RuntimeError:
             # Widget already deleted
-            if notif in self.active_notifications:
-                self.active_notifications.remove(notif)
             if timer:
                 timer.deleteLater()
-            pass
+            self.current_notification = None
+            self._process_notification_queue()
 
     def create_settings_label(self, text):
         """Create a styled label for settings form layout."""
