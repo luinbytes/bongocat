@@ -1,0 +1,12 @@
+{
+  "name": "Neon Cat",
+  "author": "Bongo Cat Team",
+  "version": "1.0.0",
+  "description": "A vibrant cyberpunk neon-themed cat",
+  "images": {
+    "idle": "cat-rest.png",
+    "left": "cat-left.png",
+    "right": "cat-right.png"
+  },
+  "rotation_degrees": -13
+}

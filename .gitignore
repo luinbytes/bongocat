@@ -1,9 +1,13 @@
 # Virtual environment
 venv/
+env/
 
 # Python cache files
 *.pyc
 __pycache__/
+*.pyo
+*.pyd
+.Python
 
 # Logs
 *.log
@@ -11,10 +15,21 @@ __pycache__/
 # Build artifacts
 build/
 dist/
+*.egg-info/
 
 # IDE settings
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
 
-# PyInstaller files
-*.spec
+# OS files
+.DS_Store
+Thumbs.db
+
+# Config file (user-specific)
+bongo.ini
+
+# PyInstaller working files (keep bongo_cat.spec)
+*.spec.bak

@@ -1,109 +1,70 @@
-import sys
+"""Main application window for Bongo Cat."""
+
 import os
-import threading
-import configparser
+import sys
+import subprocess
 import random
 import math
 import logging
-import time
-import pygame
-from typing import Optional, cast
+from typing import Optional
+
 from PyQt5 import QtCore, QtGui, QtWidgets
-from pynput import keyboard, mouse
 from PyQt5.QtWidgets import QGraphicsDropShadowEffect, QSystemTrayIcon, QMenu, QAction
 from PyQt5.QtCore import QSettings, Qt
 
-# Global variables
-PYGAME_AVAILABLE = True
+from ..models import ConfigManager, SkinManager, SoundManager, AchievementManager
+from ..utils import resource_path
+from .settings_panel import SettingsPanelWidget
+from ..animations import constants as anim
 
-# ----------------------
-#  Setup Logging
-# ----------------------
-def setup_logging():
-    """Set up basic logging."""
-    appdata = os.getenv("APPDATA")
-    if appdata is None:
-        appdata = os.path.expanduser("~")
-    log_dir = os.path.join(appdata, "BongoCat")
-    os.makedirs(log_dir, exist_ok=True)
-    log_file = os.path.join(log_dir, "bongo.log")
-    
-    # Set up logging configuration
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s [%(levelname)s] %(message)s',
-        handlers=[
-            logging.FileHandler(log_file, mode='w'),
-            logging.StreamHandler(sys.stdout)
-        ]
-    )
-    return logging.getLogger("BongoCat")
+logger = logging.getLogger("BongoCat")
 
-# Create logger
-logger = setup_logging()
-logger.info("Starting Bongo Cat")
 
-# ----------------------
-#  Utility Functions
-# ----------------------
-def resource_path(relative_path: str) -> str:
-    """Get the absolute path to a resource."""
-    if relative_path == "bongo.ini":
-        appdata = os.getenv("APPDATA")
-        if appdata is None:
-            appdata = os.path.expanduser("~")
-        appdata_path = os.path.join(appdata, "BongoCat")
-        os.makedirs(appdata_path, exist_ok=True)
-        return os.path.join(appdata_path, relative_path)
-    if getattr(sys, '_MEIPASS', None) is not None:
-        base_path = getattr(sys, '_MEIPASS')
-    else:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    return os.path.join(base_path, relative_path)
-
-# ----------------------
-#  Settings Panel Widget
-# ----------------------
-class SettingsPanelWidget(QtWidgets.QWidget):
-    """Custom widget for settings panel with overridden closeEvent"""
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.parent_window = parent
-        
-    def closeEvent(self, event):
-        """Override close event to hide panel instead of closing"""
-        event.ignore()
-        self.hide()
-
-# ----------------------
-#  Main Window Class
-# ----------------------
 class BongoCatWindow(QtWidgets.QWidget):
+    """Main Bongo Cat application window.
+    
+    A frameless, always-on-top desktop pet that responds to keyboard,
+    mouse, and controller inputs with animated slapping motions.
+    
+    Attributes:
+        trigger_slap: Signal emitted when input is detected
+        config: Configuration manager instance
+        is_paused: Whether animations are paused
+        is_hovering: Whether mouse is over the window
+        drag_position: Position for window dragging
+        current_side: Current paw side ("left" or "right")
+    """
+    
     trigger_slap = QtCore.pyqtSignal()
 
     def __init__(self):
+        """Initialize the Bongo Cat window."""
         super().__init__()
         self.trigger_slap.connect(self.do_slap)
         
-        # Initialize configuration attributes with default values
-        self.slaps = 0
-        self.hidden_footer = True
-        self.footer_alpha = 50
-        self.always_show_points = False
-        self.floating_points = True
-        self.startup_with_windows = False
-        self.max_slaps = 0
+        # Load configuration
+        self.config = ConfigManager()
+
+        # Initialize managers
+        self.skin_manager = SkinManager()
+        self.skin_manager.load_skin(self.config.current_skin)
+
+        self.sound_manager = SoundManager(
+            enabled=self.config.sound_enabled,
+            volume=self.config.sound_volume / 100.0
+        )
+
+        self.achievement_manager = AchievementManager()
+
+        # Initialize state variables
         self.is_paused = False
         self.is_hovering = False
         self.drag_position = None
         self.current_side = "left"
-        self.invert_cat = False
+        self.active_notifications = []  # Track active achievement notifications
         
+        # Setup window and UI
         self.setup_window()
-        # Load configuration first
-        self.load_config()
-        # Then set up UI with the loaded values
         self.setup_ui()
         self.setup_animations()
         self.setup_system_tray()
@@ -112,8 +73,28 @@ class BongoCatWindow(QtWidgets.QWidget):
         self.restore_window_position()
         
         # Show total slaps at startup if enabled
-        if self.always_show_points:
+        if self.config.always_show_points:
             self.show_total_slaps()
+
+        # Increment launch count and check achievements
+        self.config.launch_count += 1
+        self.config.save()
+
+        # Check for time-based achievements
+        time_achievements = self.achievement_manager.check_time_based()
+        for achievement in time_achievements:
+            self.show_achievement_notification(achievement)
+            if self.sound_manager.enabled:
+                self.sound_manager.play('achievement')
+
+        # Check for launch count achievements
+        launch_achievements = self.achievement_manager.check_launch_count(self.config.launch_count)
+        for achievement in launch_achievements:
+            self.show_achievement_notification(achievement)
+            if self.sound_manager.enabled:
+                self.sound_manager.play('achievement')
+
+        logger.info("BongoCatWindow initialized")
 
     # ----------------------
     #  Window Setup
@@ -122,7 +103,6 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Initialize window properties and flags."""
         self.setWindowTitle("Bongo Cat")
         self.settings = QSettings('BongoCat', 'BongoCat')
-        self.is_paused = False
 
         flags = Qt.WindowFlags()
         flags |= Qt.WindowType.FramelessWindowHint
@@ -133,9 +113,9 @@ class BongoCatWindow(QtWidgets.QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
         self.setMouseTracking(True)
-        
+
         # Ensure the window is tall enough to show the settings panel
-        self.min_height_with_settings = 450
+        self.min_height_with_settings = anim.MIN_HEIGHT_WITH_SETTINGS
 
     def setup_ui(self):
         """Initialize UI components."""
@@ -148,9 +128,22 @@ class BongoCatWindow(QtWidgets.QWidget):
 
     def setup_cat_images(self):
         """Load and prepare cat images."""
-        self.idle_pixmap_original = self.load_and_fix_image(resource_path("img/cat-rest.png"))
-        self.slap_pixmap_left_original = self.load_and_fix_image(resource_path("img/cat-left.png"))
-        self.slap_pixmap_right_original = self.load_and_fix_image(resource_path("img/cat-right.png"))
+        # Use skin manager to get current skin images
+        current_skin = self.skin_manager.current_skin
+        if current_skin:
+            # Join skin path with image filename to get full path
+            idle_path = os.path.join(current_skin.path, current_skin.images['idle'])
+            left_path = os.path.join(current_skin.path, current_skin.images['left'])
+            right_path = os.path.join(current_skin.path, current_skin.images['right'])
+
+            self.idle_pixmap_original = self.load_and_fix_image(resource_path(idle_path))
+            self.slap_pixmap_left_original = self.load_and_fix_image(resource_path(left_path))
+            self.slap_pixmap_right_original = self.load_and_fix_image(resource_path(right_path))
+        else:
+            # Fallback to default images
+            self.idle_pixmap_original = self.load_and_fix_image(resource_path("img/cat-rest.png"))
+            self.slap_pixmap_left_original = self.load_and_fix_image(resource_path("img/cat-left.png"))
+            self.slap_pixmap_right_original = self.load_and_fix_image(resource_path("img/cat-right.png"))
         
         # Working copies that will be stretched
         self.idle_pixmap = QtGui.QPixmap(self.idle_pixmap_original)
@@ -159,7 +152,7 @@ class BongoCatWindow(QtWidgets.QWidget):
 
         self.cat_width = self.idle_pixmap.width()
         self.cat_height = self.idle_pixmap.height()
-        self.footer_height = 35
+        self.footer_height = anim.FOOTER_HEIGHT
         self.setFixedSize(self.cat_width, self.cat_height + self.footer_height)
 
     def setup_main_container(self):
@@ -191,23 +184,23 @@ class BongoCatWindow(QtWidgets.QWidget):
 
         # Setup variables for idle animation
         self.current_image = "idle"  # Can be "idle", "left", or "right"
-        self.max_stretch = 1.08  # 8% taller at maximum
-        self.min_stretch = 0.98   # 2% shorter at minimum
+        self.max_stretch = anim.IDLE_MAX_STRETCH
+        self.min_stretch = anim.IDLE_MIN_STRETCH
         self.animation_time = 0   # Position in the sine wave
         self.stretch_factor = 1.0
-        
+
         # Set up a timer for the idle animation at 60fps for smoother animation
         self.idle_timer = QtCore.QTimer(self)
         self.idle_timer.timeout.connect(self.update_idle_stretch)
-        self.idle_timer.start(16)  # ~60 fps
+        self.idle_timer.start(anim.IDLE_TIMER_MS)
 
     def update_idle_stretch(self):
         """Update the cat's stretch animation frame with smooth transitions."""
         if self.is_paused:
             return
-            
+
         # Use sine wave for smoother animation
-        angle = (self.animation_time if hasattr(self, 'animation_time') else 0) + 0.05
+        angle = (self.animation_time if hasattr(self, 'animation_time') else 0) + anim.IDLE_ANIMATION_SPEED
         self.animation_time = angle % (2 * math.pi)
         
         # Smoother sine wave oscillation
@@ -234,9 +227,9 @@ class BongoCatWindow(QtWidgets.QWidget):
         # Get original dimensions
         original_width = source_pixmap.width()
         original_height = source_pixmap.height()
-        
+
         # Define fixed bottom percentage
-        fixed_bottom_percent = 0.25
+        fixed_bottom_percent = anim.FIXED_BOTTOM_PERCENT
         fixed_bottom_height = int(original_height * fixed_bottom_percent)
         stretchable_height = original_height - fixed_bottom_height
         
@@ -251,7 +244,7 @@ class BongoCatWindow(QtWidgets.QWidget):
         original_image = source_pixmap.toImage()
         
         # Handle inversion if enabled
-        if hasattr(self, 'invert_cat') and self.invert_cat:
+        if self.config.invert_cat:
             original_image = original_image.mirrored(horizontal=True, vertical=False)
         
         # Create painter
@@ -271,8 +264,6 @@ class BongoCatWindow(QtWidgets.QWidget):
         )
         
         # Calculate where to draw the stretched top part
-        # Position it so the bottom of the stretched top aligns with 
-        # where the bottom of the original top part would be
         top_y_position = stretchable_height - stretched_top_height
         
         # Draw the stretched top at the calculated position
@@ -315,7 +306,7 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Setup footer styling."""
         self.footer_widget.setStyleSheet(f"""
             QWidget {{
-                background: rgba(40, 44, 52, {self.footer_alpha * 2.55});
+                background: rgba(40, 44, 52, {self.config.footer_alpha * anim.FOOTER_ALPHA_MULTIPLIER});
                 border-radius: 12px;
                 padding: 4px;
             }}
@@ -352,7 +343,7 @@ class BongoCatWindow(QtWidgets.QWidget):
 
         # Use a shorter label format
         self.count_label = QtWidgets.QLabel(self.footer_widget)
-        self.count_label.setText(f"{self.slaps}")
+        self.count_label.setText(f"{self.config.slaps}")
         self.count_label.setStyleSheet("""
             color: white;
             font: bold 14px;
@@ -418,7 +409,7 @@ class BongoCatWindow(QtWidgets.QWidget):
         self.footer_opacity_effect = QtWidgets.QGraphicsOpacityEffect(self.footer_widget)
         self.footer_widget.setGraphicsEffect(self.footer_opacity_effect)
         self.footer_animation = QtCore.QPropertyAnimation(self.footer_opacity_effect, b"opacity")
-        self.footer_animation.setDuration(300)
+        self.footer_animation.setDuration(anim.FOOTER_ANIMATION_DURATION_MS)
         self.footer_animation.finished.connect(self.onFooterAnimationFinished)
         self.footer_opacity_effect.setOpacity(0.0)
 
@@ -426,7 +417,7 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Initialize combo counter variables."""
         self.combo_count = 0
         self.last_slap_time = 0
-        self.combo_timeout = 800
+        self.combo_timeout = anim.COMBO_TIMEOUT_MS
         self.combo_label: Optional[QtWidgets.QLabel] = None
         self.combo_animation_group: Optional[QtCore.QParallelAnimationGroup] = None
         self.combo_timeout_timer = QtCore.QTimer()
@@ -436,9 +427,9 @@ class BongoCatWindow(QtWidgets.QWidget):
     def setup_total_slaps_label(self):
         """Setup the total slaps label."""
         self.total_slaps_label = QtWidgets.QLabel(self.container)
-        self.total_slaps_label.setStyleSheet("""
+        self.total_slaps_label.setStyleSheet(f"""
             color: white;
-            font: 600 14px 'Segoe UI';
+            font: 600 {anim.TOTAL_SLAPS_FONT_SIZE}px 'Segoe UI';
             background-color: rgba(40, 44, 52, 0.85);
             padding: 4px 12px;
             border-radius: 8px;
@@ -447,9 +438,9 @@ class BongoCatWindow(QtWidgets.QWidget):
         self.total_slaps_label.hide()
 
         shadow_effect = QGraphicsDropShadowEffect()
-        shadow_effect.setBlurRadius(8)
+        shadow_effect.setBlurRadius(anim.TOTAL_SLAPS_SHADOW_BLUR)
         shadow_effect.setOffset(0, 2)
-        shadow_effect.setColor(QtGui.QColor(0, 0, 0, 100))
+        shadow_effect.setColor(QtGui.QColor(0, 0, 0, anim.TOTAL_SLAPS_SHADOW_ALPHA))
         self.total_slaps_label.setGraphicsEffect(shadow_effect)
 
     def setup_animations(self):
@@ -465,16 +456,16 @@ class BongoCatWindow(QtWidgets.QWidget):
     #  Image Handling
     # ----------------------
     def load_and_fix_image(self, path):
-        """Loads an image and rotates it back -16 degrees to fix tilt."""
+        """Loads an image and rotates it back to fix tilt."""
         try:
             pixmap = QtGui.QPixmap(resource_path(path))
             if pixmap.isNull():
-                raise Exception(f"Failed to load image: {path}")
+                raise FileNotFoundError(f"Failed to load image: {path}")
             transform = QtGui.QTransform()
-            transform.rotate(-13)
+            transform.rotate(anim.IMAGE_ROTATION_DEGREES)
             return pixmap.transformed(transform, Qt.TransformationMode.SmoothTransformation)
-        except Exception as e:
-            print(f"Error loading image {path}: {e}")
+        except (FileNotFoundError, Exception) as e:
+            logger.error(f"Error loading image {path}: {e}")
             fallback = QtGui.QPixmap(100, 100)
             fallback.fill(QtGui.QColor(255, 0, 0))
             return fallback
@@ -508,24 +499,19 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Update the combo counter style based on count."""
         if not self.combo_label:
             return
-            
-        font_size = min(14 + (self.combo_count // 3), 20)
-        
+
+        font_size = anim.get_combo_font_size(self.combo_count)
+
         # Determine color based on combo count
-        if self.combo_count < 30:
-            color = "255, 255, 100"  # Yellow
-        elif self.combo_count < 60:
-            color = "255, 150, 50"   # Orange
-        else:
-            color = "255, 50, 50"    # Red
-        
+        color = anim.get_combo_color(self.combo_count)
+
         self.original_color = color
-        
+
         # Create a drop shadow effect for better visibility without background
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(4)
+        shadow.setBlurRadius(anim.COMBO_SHADOW_BLUR_RADIUS)
         shadow.setOffset(0, 0)
-        shadow.setColor(QtGui.QColor(0, 0, 0, 200))
+        shadow.setColor(QtGui.QColor(0, 0, 0, anim.COMBO_SHADOW_COLOR_ALPHA))
         self.combo_label.setGraphicsEffect(shadow)
         
         # Use transparent background with text-shadow for better visibility
@@ -546,12 +532,12 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Setup animations for the combo counter."""
         if not self.combo_label:
             return
-            
-        x = self.cat_width - self.combo_label.width() - 10
-        y = 10
-        
-        if self.always_show_points and self.total_slaps_label.isVisible():
-            y = self.total_slaps_label.y() + self.total_slaps_label.height() + 5
+
+        x = self.cat_width - self.combo_label.width() - anim.COMBO_POSITION_RIGHT_MARGIN
+        y = anim.COMBO_POSITION_TOP_MARGIN
+
+        if self.config.always_show_points and self.total_slaps_label.isVisible():
+            y = self.total_slaps_label.y() + self.total_slaps_label.height() + anim.COMBO_POSITION_OFFSET_BELOW_TOTAL
         
         self.combo_label.move(x, y)
         
@@ -563,36 +549,36 @@ class BongoCatWindow(QtWidgets.QWidget):
         
         # Initial pop effect
         current_geometry = self.combo_label.geometry()
-        expanded_width = int(current_geometry.width() * 1.2)
-        expanded_height = int(current_geometry.height() * 1.2)
+        expanded_width = int(current_geometry.width() * anim.COMBO_POP_SCALE)
+        expanded_height = int(current_geometry.height() * anim.COMBO_POP_SCALE)
         x_offset = (expanded_width - current_geometry.width()) // 2
         y_offset = (expanded_height - current_geometry.height()) // 2
-        
+
         expanded_geometry = QtCore.QRect(
             current_geometry.x() - x_offset,
             current_geometry.y() - y_offset,
             expanded_width,
             expanded_height
         )
-        
+
         pop_animation = QtCore.QPropertyAnimation(self.combo_label, b"geometry")
-        pop_animation.setDuration(150)
+        pop_animation.setDuration(anim.COMBO_POP_DURATION_MS)
         pop_animation.setStartValue(expanded_geometry)
         pop_animation.setEndValue(current_geometry)
         pop_animation.setEasingCurve(QtCore.QEasingCurve.OutBack)
-        
+
         bounce_animation = QtCore.QPropertyAnimation(self.combo_label, b"pos")
-        bounce_animation.setDuration(150)
-        bounce_animation.setStartValue(QtCore.QPoint(x, y + 5))
+        bounce_animation.setDuration(anim.COMBO_POP_DURATION_MS)
+        bounce_animation.setStartValue(QtCore.QPoint(x, y + anim.COMBO_BOUNCE_OFFSET))
         bounce_animation.setEndValue(QtCore.QPoint(x, y))
         bounce_animation.setEasingCurve(QtCore.QEasingCurve.OutBack)
         
         self.combo_animation_group.addAnimation(pop_animation)
         self.combo_animation_group.addAnimation(bounce_animation)
-        
-        if self.combo_count >= 60:
+
+        if anim.is_overload(self.combo_count):
             self.setup_overload_animation(x, y)
-        
+
         self.combo_animation_group.start()
         
     def setup_overload_animation(self, x: int, y: int):
@@ -602,25 +588,25 @@ class BongoCatWindow(QtWidgets.QWidget):
             
         self.combo_original_pos = QtCore.QPoint(x, y)
         self.combo_original_size = QtCore.QSize(self.combo_label.width(), self.combo_label.height())
-        
+
         if not hasattr(self, 'overload_timer'):
             self.overload_timer = QtCore.QTimer()
             self.overload_timer.timeout.connect(self.update_overload_animation)
         else:
             self.overload_timer.stop()
-        
+
         self.animation_time = 0
         self.pulse_direction = 1
-        self.overload_timer.start(33)
+        self.overload_timer.start(anim.OVERLOAD_TIMER_MS)
 
     def update_overload_animation(self):
         """Update the overload animation effect for high combos."""
-        if not self.combo_label or self.combo_count < 60:
+        if not self.combo_label or not anim.is_overload(self.combo_count):
             if hasattr(self, 'overload_timer'):
                 self.overload_timer.stop()
             return
-        
-        self.animation_time += 0.08 * self.pulse_direction
+
+        self.animation_time += anim.OVERLOAD_ANIMATION_SPEED * self.pulse_direction
         if self.animation_time >= 1.0:
             self.animation_time = 1.0
             self.pulse_direction = -1
@@ -635,42 +621,42 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Update visual effects for overload animation."""
         if not self.combo_label:
             return
-            
-        scale_factor = 0.9 + wave * 0.3
+
+        scale_factor = anim.OVERLOAD_SCALE_MIN + wave * (anim.OVERLOAD_SCALE_MAX - anim.OVERLOAD_SCALE_MIN)
         new_width = int(self.combo_original_size.width() * scale_factor)
         new_height = int(self.combo_original_size.height() * scale_factor)
-        
+
         x_offset = (new_width - self.combo_original_size.width()) // 2
         y_offset = (new_height - self.combo_original_size.height()) // 2
-        
-        wobble_x = int(math.sin(self.animation_time * 3 * math.pi) * 8)
-        wobble_y = int(math.cos(self.animation_time * 2 * math.pi) * 5)
-        
+
+        wobble_x = int(math.sin(self.animation_time * anim.OVERLOAD_WOBBLE_X_FREQUENCY * math.pi) * anim.OVERLOAD_WOBBLE_X_AMPLITUDE)
+        wobble_y = int(math.cos(self.animation_time * anim.OVERLOAD_WOBBLE_Y_FREQUENCY * math.pi) * anim.OVERLOAD_WOBBLE_Y_AMPLITUDE)
+
         shake_amount = 0
-        if wave > 0.8 or wave < 0.2:
-            shake_amount = random.randint(-2, 2)
+        if wave > anim.OVERLOAD_SHAKE_THRESHOLD_HIGH or wave < anim.OVERLOAD_SHAKE_THRESHOLD_LOW:
+            shake_amount = random.randint(-anim.OVERLOAD_SHAKE_MAX, anim.OVERLOAD_SHAKE_MAX)
         
         new_x = self.combo_original_pos.x() - x_offset + wobble_x + shake_amount
         new_y = self.combo_original_pos.y() - y_offset + wobble_y + shake_amount
         
         self.combo_label.setGeometry(new_x, new_y, new_width, new_height)
-        
+
         # Parse color components
         r, g, b = map(int, self.original_color.split(','))
-        intensity = 0.6 + wave * 0.9
+        intensity = anim.OVERLOAD_INTENSITY_MIN + wave * (anim.OVERLOAD_INTENSITY_MAX - anim.OVERLOAD_INTENSITY_MIN)
         r_new = min(255, int(r * intensity))
         g_new = min(255, int(g * intensity))
         b_new = min(255, int(b * intensity))
-        
+
         # Shadow gets darker with pulse
-        shadow_intensity = int(100 + wave * 100)
+        shadow_intensity = int(anim.OVERLOAD_SHADOW_ALPHA_MIN + wave * (anim.OVERLOAD_SHADOW_ALPHA_MAX - anim.OVERLOAD_SHADOW_ALPHA_MIN))
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(4 + wave * 3)
+        shadow.setBlurRadius(anim.OVERLOAD_SHADOW_BLUR_MIN + wave * (anim.OVERLOAD_SHADOW_BLUR_MAX - anim.OVERLOAD_SHADOW_BLUR_MIN))
         shadow.setOffset(0, 0)
         shadow.setColor(QtGui.QColor(0, 0, 0, shadow_intensity))
         self.combo_label.setGraphicsEffect(shadow)
-        
-        font_size = min(14 + (self.combo_count // 3), 20)
+
+        font_size = anim.get_combo_font_size(self.combo_count)
         
         self.combo_label.setStyleSheet(f"""
             QLabel {{
@@ -700,20 +686,20 @@ class BongoCatWindow(QtWidgets.QWidget):
         fade_effect = QtWidgets.QGraphicsOpacityEffect(self.combo_label)
         self.combo_label.setGraphicsEffect(fade_effect)
         fade_effect.setOpacity(1.0)
-        
+
         fade_animation = QtCore.QPropertyAnimation(fade_effect, b"opacity")
-        fade_animation.setDuration(300)
+        fade_animation.setDuration(anim.COMBO_FADE_DURATION_MS)
         fade_animation.setStartValue(1.0)
         fade_animation.setEndValue(0.0)
         fade_animation.setEasingCurve(QtCore.QEasingCurve.OutQuad)
-        
+
         current_geometry = self.combo_label.geometry()
         scale_animation = QtCore.QPropertyAnimation(self.combo_label, b"geometry")
-        scale_animation.setDuration(300)
+        scale_animation.setDuration(anim.COMBO_FADE_DURATION_MS)
         scale_animation.setStartValue(current_geometry)
-        
-        target_width = int(current_geometry.width() * 0.8)
-        target_height = int(current_geometry.height() * 0.8)
+
+        target_width = int(current_geometry.width() * anim.COMBO_FADE_SCALE_FACTOR)
+        target_height = int(current_geometry.height() * anim.COMBO_FADE_SCALE_FACTOR)
         x_offset = (current_geometry.width() - target_width) // 2
         y_offset = (current_geometry.height() - target_height) // 2
         
@@ -780,14 +766,21 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Handle mouse release events."""
         if event.button() == Qt.MouseButton.LeftButton:
             self.setCursor(Qt.CursorShape.ArrowCursor)
-            
+
+            # Save window position if it was dragged
+            if self.drag_position:
+                pos = self.pos()
+                self.config.window_x = pos.x()
+                self.config.window_y = pos.y()
+                self.config.save()
+
             # Recreate the opacity effect to ensure it's valid
             self.footer_opacity_effect = QtWidgets.QGraphicsOpacityEffect(self.footer_widget)
             self.footer_widget.setGraphicsEffect(self.footer_opacity_effect)
             self.footer_animation.setTargetObject(self.footer_opacity_effect)
             self.footer_animation.setPropertyName(b"opacity")
             
-            if not self.is_hovering and self.hidden_footer:
+            if not self.is_hovering and self.config.hidden_footer:
                 self.footer_opacity_effect.setOpacity(0.0)
                 self.footer_widget.hide()
             elif hasattr(self, 'original_opacity'):
@@ -832,7 +825,13 @@ class BongoCatWindow(QtWidgets.QWidget):
     def setup_system_tray(self):
         """Setup the system tray icon and menu."""
         self.tray_icon = QSystemTrayIcon(self)
-        self.tray_icon.setIcon(QtGui.QIcon(resource_path("img/cat-rest.png")))
+        # Use current skin for tray icon
+        current_skin = self.skin_manager.current_skin
+        if current_skin:
+            icon_path = os.path.join(current_skin.path, current_skin.images['idle'])
+            self.tray_icon.setIcon(QtGui.QIcon(resource_path(icon_path)))
+        else:
+            self.tray_icon.setIcon(QtGui.QIcon(resource_path("img/cat-rest.png")))
         self.tray_icon.setToolTip("Bongo Cat")
         
         tray_menu = QMenu()
@@ -908,129 +907,56 @@ class BongoCatWindow(QtWidgets.QWidget):
 
     def reset_count(self):
         """Reset the slap count."""
-        self.slaps = 0
-        self.update_slap_count()
-        self.count_label.setText(f"{self.slaps}")
-        if self.always_show_points:
+        self.config.slaps = 0
+        self.config.update_slap_count(0)
+        self.count_label.setText(f"{self.config.slaps}")
+        if self.config.always_show_points:
             self.show_total_slaps()
 
     def restore_window_position(self):
         """Restore the window position from settings."""
         screen = QtWidgets.QApplication.primaryScreen()
-        if screen:
-            geometry = screen.geometry()
+        if not screen:
+            return
+
+        geometry = screen.geometry()
+
+        # Check if we have a saved position
+        if self.config.window_x >= 0 and self.config.window_y >= 0:
+            # Ensure the saved position is still on screen
+            x = min(max(0, self.config.window_x), geometry.width() - self.width())
+            y = min(max(0, self.config.window_y), geometry.height() - self.height())
+            self.move(x, y)
+        else:
+            # First launch - center the window
             x = (geometry.width() - self.width()) // 2
             y = (geometry.height() - self.height()) // 2
             self.move(x, y)
+            # Save this initial position
+            self.config.window_x = x
+            self.config.window_y = y
+            self.config.save()
 
     # ----------------------
     #  Configuration
     # ----------------------
-    def load_config(self):
-        """Load or initialize the configuration file."""
-        self.config = configparser.ConfigParser()
-        config_path = resource_path("bongo.ini")
-
-        default_config = {
-            "Settings": {
-                "slaps": "0",
-                "hidden_footer": "true",
-                "footer_alpha": "50",
-                "always_show_points": "false",
-                "floating_points": "true",
-                "startup_with_windows": "false",
-                "max_slaps": "0",
-                "invert_cat": "false"
-            }
-        }
-
-        def safe_getboolean(section, key, default=False):
-            try:
-                value = self.config.get(section, key, fallback=str(default)).lower()
-                return value in ('true', '1', 'yes', 'on')
-            except:
-                return default
-
-        def safe_getint(section, key, default=0):
-            try:
-                return int(self.config.get(section, key, fallback=str(default)))
-            except:
-                return default
-
-        if not os.path.exists(config_path):
-            self.config.read_dict(default_config)
-            try:
-                with open(config_path, "w") as config_file:
-                    self.config.write(config_file)
-            except Exception as e:
-                print(f"Error creating config file: {e}")
-                self.config.read_dict(default_config)
-        else:
-            try:
-                self.config.read(config_path)
-                for section, values in default_config.items():
-                    if section not in self.config:
-                        self.config[section] = {}
-                    for key, value in values.items():
-                        if key not in self.config[section]:
-                            self.config[section][key] = value
-                with open(config_path, "w") as config_file:
-                    self.config.write(config_file)
-            except Exception as e:
-                print(f"Error reading config file: {e}")
-                self.config.read_dict(default_config)
-
-        try:
-            self.slaps = max(0, safe_getint("Settings", "slaps"))
-            self.hidden_footer = safe_getboolean("Settings", "hidden_footer", True)
-            self.footer_alpha = max(0, min(100, safe_getint("Settings", "footer_alpha", 50)))
-            self.always_show_points = safe_getboolean("Settings", "always_show_points", False)
-            self.floating_points = safe_getboolean("Settings", "floating_points", True)
-            self.startup_with_windows = safe_getboolean("Settings", "startup_with_windows", False)
-            self.max_slaps = max(0, safe_getint("Settings", "max_slaps"))
-            self.invert_cat = safe_getboolean("Settings", "invert_cat", False)
-            
-            # Update the count label with the loaded slaps count
-            if hasattr(self, 'count_label'):
-                self.count_label.setText(f"{self.slaps}")
-                
-            # Show total slaps if always_show_points is enabled
-            if self.always_show_points and hasattr(self, 'total_slaps_label'):
-                self.show_total_slaps()
-        except Exception as e:
-            print(f"Error loading settings: {e}")
-            self.slaps = 0
-            self.hidden_footer = True
-            self.footer_alpha = 50
-            self.always_show_points = False
-            self.floating_points = True
-            self.startup_with_windows = False
-            self.max_slaps = 0
-            self.invert_cat = False
-
-    def save_config(self):
-        """Save the current configuration to the file."""
-        config_path = resource_path("bongo.ini")
-        try:
-            self.config["Settings"]["slaps"] = str(self.slaps)
-            self.config["Settings"]["hidden_footer"] = str(self.hidden_footer).lower()
-            self.config["Settings"]["footer_alpha"] = str(self.footer_alpha)
-            self.config["Settings"]["always_show_points"] = str(self.always_show_points).lower()
-            self.config["Settings"]["floating_points"] = str(self.floating_points).lower()
-            self.config["Settings"]["startup_with_windows"] = str(self.startup_with_windows).lower()
-            self.config["Settings"]["max_slaps"] = str(self.max_slaps)
-            self.config["Settings"]["invert_cat"] = str(self.invert_cat).lower()
-            
-            with open(config_path, "w") as config_file:
-                self.config.write(config_file)
-        except Exception as e:
-            print(f"Error saving config: {e}")
-
     def open_ini_file(self):
         """Open the .ini file in the default editor."""
         config_path = resource_path("bongo.ini")
         if os.path.exists(config_path):
-            os.startfile(config_path)
+            try:
+                if sys.platform == 'win32':
+                    os.startfile(config_path)
+                elif sys.platform == 'darwin':
+                    subprocess.call(['open', config_path])
+                else:  # Linux and other Unix-like systems
+                    subprocess.call(['xdg-open', config_path])
+            except Exception as e:
+                logger.error(f"Failed to open config file: {e}")
+                QtWidgets.QMessageBox.warning(
+                    self, "Error",
+                    f"Could not open config file: {e}"
+                )
 
     # ----------------------
     #  Footer Fading
@@ -1038,7 +964,7 @@ class BongoCatWindow(QtWidgets.QWidget):
     def fade_footer(self, fade_in: bool):
         """Fade the footer in or out."""
         # If the footer should always be visible
-        if not self.hidden_footer:
+        if not self.config.hidden_footer:
             self.footer_widget.show()
             
             # Make sure the opacity effect is valid
@@ -1075,7 +1001,7 @@ class BongoCatWindow(QtWidgets.QWidget):
 
     def onFooterAnimationFinished(self):
         """Hide footer after fade out completes."""
-        if self.footer_opacity_effect and self.footer_opacity_effect.opacity() == 0.0 and self.hidden_footer:
+        if self.footer_opacity_effect and self.footer_opacity_effect.opacity() == 0.0 and self.config.hidden_footer:
             self.footer_widget.hide()
 
     # ----------------------
@@ -1087,8 +1013,15 @@ class BongoCatWindow(QtWidgets.QWidget):
         if self.is_paused:
             return
             
-        self.slaps += 1
-        
+        self.config.slaps += 1
+
+        # Check for slap-based achievements
+        newly_unlocked = self.achievement_manager.check_slap_count(self.config.slaps)
+        for achievement in newly_unlocked:
+            self.show_achievement_notification(achievement)
+            if self.sound_manager.enabled:
+                self.sound_manager.play('achievement')
+
         # Update combo count and reset timeout
         current_time = QtCore.QTime.currentTime().msecsSinceStartOfDay()
         if current_time - self.last_slap_time < self.combo_timeout:
@@ -1096,22 +1029,43 @@ class BongoCatWindow(QtWidgets.QWidget):
         else:
             self.combo_count = 1
         self.last_slap_time = current_time
-        
+
+        # Check for combo-based achievements
+        newly_unlocked_combo = self.achievement_manager.check_combo(self.combo_count)
+        for achievement in newly_unlocked_combo:
+            self.show_achievement_notification(achievement)
+            if self.sound_manager.enabled:
+                self.sound_manager.play('achievement')
+
+        # Play slap sound
+        if self.sound_manager.enabled:
+            # Alternate between slap sounds randomly
+            alternate = random.random() > 0.5
+            self.sound_manager.play_slap(alternate=alternate)
+
+        # Play combo sound at milestones
+        if self.combo_count in [10, 25, 50, 100]:
+            if self.sound_manager.enabled:
+                if self.combo_count >= 50:
+                    self.sound_manager.play('combo_high')
+                else:
+                    self.sound_manager.play('combo')
+
         # Reset the timeout timer
         self.combo_timeout_timer.stop()
         self.combo_timeout_timer.start(self.combo_timeout)
-        
+
         # Only update the slaps count in the config, not the entire config
-        self.update_slap_count()
-        self.count_label.setText(f"{self.slaps}")
+        self.config.update_slap_count(self.config.slaps)
+        self.count_label.setText(f"{self.config.slaps}")
         self.count_label.adjustSize()
 
         # Always update total slaps if enabled
-        if self.always_show_points:
+        if self.config.always_show_points:
             self.show_total_slaps()
             
         # Show floating points if enabled (can work together with always_show_points)
-        if self.floating_points:
+        if self.config.floating_points:
             self.show_bouncing_slaps()
 
         # Alternate the cat's paws without transition, just change the image type
@@ -1125,45 +1079,45 @@ class BongoCatWindow(QtWidgets.QWidget):
         # Update the image with current stretch factor
         self.update_stretched_image()
 
-        # Restart the slapping timer (100 ms)
+        # Restart the slapping timer
         if self.slapping_timer.isActive():
             self.slapping_timer.stop()
-        self.slapping_timer.start(100)
+        self.slapping_timer.start(anim.SLAP_RESET_DELAY_MS)
 
     def reset_image(self):
-        """Revert to idle image after 100 ms."""
+        """Revert to idle image after slap delay."""
         self.current_image = "idle"
         self.update_stretched_image()
 
     def show_total_slaps(self):
         """Display the total slaps statically."""
-        self.total_slaps_label.setText(str(self.slaps))
+        self.total_slaps_label.setText(str(self.config.slaps))
         # Ensure the label is wide enough for the text
         self.total_slaps_label.adjustSize()
-        width = max(50, self.total_slaps_label.width())  # Min width of 50px
+        width = max(anim.TOTAL_SLAPS_MIN_WIDTH, self.total_slaps_label.width())
         self.total_slaps_label.setFixedWidth(width)
         # Position in top-right corner with padding
-        x = self.cat_width - width - 10  # 10px padding from right
-        y = 10  # 10px from top
+        x = self.cat_width - width - anim.TOTAL_SLAPS_RIGHT_MARGIN
+        y = anim.TOTAL_SLAPS_TOP_MARGIN
         self.total_slaps_label.move(x, y)
         self.total_slaps_label.show()
         self.total_slaps_label.raise_()
 
     def show_bouncing_slaps(self):
         """Animate a bouncing +1 that merges into a combo counter."""
-        if not self.floating_points:
+        if not self.config.floating_points:
             return
 
         # Create the shadow label first (will be positioned behind)
         shadow_label = QtWidgets.QLabel(self.container)
-        shadow_label.setStyleSheet("""
-            QLabel {
-                color: rgba(0, 0, 0, 0.85);
-                font: 700 14px 'Segoe UI';
+        shadow_label.setStyleSheet(f"""
+            QLabel {{
+                color: {anim.FLOATING_SHADOW_COLOR};
+                font: 700 {anim.FLOATING_FONT_SIZE}px 'Segoe UI';
                 background-color: transparent;
                 padding: 4px 8px;
                 border: none;
-            }
+            }}
         """)
         shadow_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         shadow_label.setText("+1")
@@ -1171,29 +1125,29 @@ class BongoCatWindow(QtWidgets.QWidget):
 
         # Create the main +1 label with off-white color
         slap_label = QtWidgets.QLabel(self.container)
-        slap_label.setStyleSheet("""
-            QLabel {
-                color: rgba(245, 245, 245, 0.95);
-                font: 700 14px 'Segoe UI';
+        slap_label.setStyleSheet(f"""
+            QLabel {{
+                color: {anim.FLOATING_MAIN_COLOR};
+                font: 700 {anim.FLOATING_FONT_SIZE}px 'Segoe UI';
                 background-color: transparent;
                 padding: 4px 8px;
                 border: none;
-            }
+            }}
         """)
         slap_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         slap_label.setText("+1")
         slap_label.adjustSize()
-        
+
         # Position the labels with slight randomization
         x = (self.cat_width - slap_label.width()) // 2
-        x += random.randint(-15, 15)
-        y = self.cat_height // 2 + 10
-        
-        # Position shadow 2px offset from main label (more pronounced)
-        shadow_label.move(x + 2, y + 2)
+        x += random.randint(anim.FLOATING_HORIZONTAL_OFFSET_MIN, anim.FLOATING_HORIZONTAL_OFFSET_MAX)
+        y = self.cat_height // 2 + anim.FLOATING_VERTICAL_CENTER_OFFSET
+
+        # Position shadow offset from main label
+        shadow_label.move(x + anim.FLOATING_SHADOW_OFFSET_X, y + anim.FLOATING_SHADOW_OFFSET_Y)
         shadow_label.show()
         shadow_label.raise_()
-        
+
         # Position main label
         slap_label.move(x, y)
         slap_label.show()
@@ -1201,23 +1155,23 @@ class BongoCatWindow(QtWidgets.QWidget):
 
         # Create rise animation for shadow label
         shadow_rise_animation = QtCore.QPropertyAnimation(shadow_label, b"pos")
-        shadow_rise_animation.setDuration(400)
+        shadow_rise_animation.setDuration(anim.FLOATING_ANIMATION_DURATION_MS)
         shadow_rise_animation.setEasingCurve(QtCore.QEasingCurve.OutQuad)
         shadow_rise_animation.setStartValue(shadow_label.pos())
-        
+
         # Create rise animation for main label
         main_rise_animation = QtCore.QPropertyAnimation(slap_label, b"pos")
-        main_rise_animation.setDuration(400)
+        main_rise_animation.setDuration(anim.FLOATING_ANIMATION_DURATION_MS)
         main_rise_animation.setEasingCurve(QtCore.QEasingCurve.OutQuad)
         main_rise_animation.setStartValue(slap_label.pos())
-        
+
         # If we have an active combo, move towards it
         if self.combo_count > 1 and self.combo_label:
             main_target_pos = self.combo_label.pos()
-            shadow_target_pos = QtCore.QPoint(main_target_pos.x() + 2, main_target_pos.y() + 2)
+            shadow_target_pos = QtCore.QPoint(main_target_pos.x() + anim.FLOATING_SHADOW_OFFSET_X, main_target_pos.y() + anim.FLOATING_SHADOW_OFFSET_Y)
         else:
-            main_target_pos = QtCore.QPoint(x, y - 40)
-            shadow_target_pos = QtCore.QPoint(x + 2, y - 38)  # Maintain 2px offset
+            main_target_pos = QtCore.QPoint(x, y - anim.FLOATING_RISE_DISTANCE)
+            shadow_target_pos = QtCore.QPoint(x + anim.FLOATING_SHADOW_OFFSET_X, y - anim.FLOATING_RISE_DISTANCE + anim.FLOATING_SHADOW_OFFSET_Y)
         
         main_rise_animation.setEndValue(main_target_pos)
         shadow_rise_animation.setEndValue(shadow_target_pos)
@@ -1226,16 +1180,16 @@ class BongoCatWindow(QtWidgets.QWidget):
         main_fade_effect = QtWidgets.QGraphicsOpacityEffect(slap_label)
         slap_label.setGraphicsEffect(main_fade_effect)
         main_fade_animation = QtCore.QPropertyAnimation(main_fade_effect, b"opacity")
-        main_fade_animation.setDuration(400)
-        main_fade_animation.setStartValue(1.0)
-        main_fade_animation.setEndValue(0.0 if self.combo_count > 1 else 0.8)
-        
+        main_fade_animation.setDuration(anim.FLOATING_ANIMATION_DURATION_MS)
+        main_fade_animation.setStartValue(anim.FLOATING_FADE_START)
+        main_fade_animation.setEndValue(anim.FLOATING_FADE_END_COMBO if self.combo_count > 1 else anim.FLOATING_FADE_END_SINGLE)
+
         shadow_fade_effect = QtWidgets.QGraphicsOpacityEffect(shadow_label)
         shadow_label.setGraphicsEffect(shadow_fade_effect)
         shadow_fade_animation = QtCore.QPropertyAnimation(shadow_fade_effect, b"opacity")
-        shadow_fade_animation.setDuration(400)
-        shadow_fade_animation.setStartValue(1.0)
-        shadow_fade_animation.setEndValue(0.0 if self.combo_count > 1 else 0.8)
+        shadow_fade_animation.setDuration(anim.FLOATING_ANIMATION_DURATION_MS)
+        shadow_fade_animation.setStartValue(anim.FLOATING_FADE_START)
+        shadow_fade_animation.setEndValue(anim.FLOATING_FADE_END_COMBO if self.combo_count > 1 else anim.FLOATING_FADE_END_SINGLE)
         
         # Group animations
         animation_group = QtCore.QParallelAnimationGroup()
@@ -1273,17 +1227,50 @@ class BongoCatWindow(QtWidgets.QWidget):
             self.settings_panel.activateWindow()
         else:
             # Update current values
-            self.hidden_footer_checkbox.setChecked(self.hidden_footer)
-            self.footer_alpha_slider.setValue(self.footer_alpha)
-            self.always_show_points_checkbox.setChecked(self.always_show_points)
-            self.floating_points_checkbox.setChecked(self.floating_points)
-            self.startup_with_windows_checkbox.setChecked(self.startup_with_windows)
-            self.invert_cat_checkbox.setChecked(self.invert_cat)
-            self.max_slaps_spinbox.setValue(self.max_slaps)
-            
-            # Position the settings panel near the main window
-            main_pos = self.pos()
-            self.settings_panel.move(main_pos.x() + self.width() + 10, main_pos.y())
+            self.config.hidden_footer_checkbox.setChecked(self.config.hidden_footer)
+            self.config.footer_alpha_slider.setValue(self.config.footer_alpha)
+            self.config.always_show_points_checkbox.setChecked(self.config.always_show_points)
+            self.config.floating_points_checkbox.setChecked(self.config.floating_points)
+            self.config.startup_with_windows_checkbox.setChecked(self.config.startup_with_windows)
+            self.config.invert_cat_checkbox.setChecked(self.config.invert_cat)
+            self.config.max_slaps_spinbox.setValue(self.config.max_slaps)
+
+            # Update skin dropdown
+            current_index = self.config.skin_dropdown.findData(self.config.current_skin)
+            if current_index >= 0:
+                self.config.skin_dropdown.setCurrentIndex(current_index)
+
+            # Update sound settings
+            self.config.sound_enabled_checkbox.setChecked(self.config.sound_enabled)
+            self.config.sound_volume_slider.setValue(self.config.sound_volume)
+
+            # Position the settings panel near the main window, ensuring it stays on screen
+            screen = QtWidgets.QApplication.primaryScreen()
+            if screen:
+                screen_geometry = screen.geometry()
+                main_pos = self.pos()
+                panel_width = self.settings_panel.width()
+                panel_height = self.settings_panel.height()
+
+                # Try to position to the right of the cat first
+                x = main_pos.x() + self.width() + 10
+                y = main_pos.y()
+
+                # If it would go off the right edge, position to the left instead
+                if x + panel_width > screen_geometry.width():
+                    x = main_pos.x() - panel_width - 10
+
+                # If still off screen (left edge), center it on screen
+                if x < 0:
+                    x = (screen_geometry.width() - panel_width) // 2
+
+                # Ensure Y is on screen
+                if y + panel_height > screen_geometry.height():
+                    y = screen_geometry.height() - panel_height - 10
+                if y < 0:
+                    y = 10
+
+                self.settings_panel.move(x, y)
             
             # Show and activate the panel
             self.settings_panel.show()
@@ -1291,19 +1278,38 @@ class BongoCatWindow(QtWidgets.QWidget):
 
     def apply_settings(self):
         """Apply the settings changes."""
-        old_invert_cat = self.invert_cat
-        
+        old_invert_cat = self.config.invert_cat
+
         # Update settings from UI
-        self.hidden_footer = self.hidden_footer_checkbox.isChecked()
-        self.footer_alpha = self.footer_alpha_slider.value()
-        self.always_show_points = self.always_show_points_checkbox.isChecked()
-        self.floating_points = self.floating_points_checkbox.isChecked()
-        self.startup_with_windows = self.startup_with_windows_checkbox.isChecked()
-        self.max_slaps = self.max_slaps_spinbox.value()
-        self.invert_cat = self.invert_cat_checkbox.isChecked()
-        
+        self.config.hidden_footer = self.config.hidden_footer_checkbox.isChecked()
+        self.config.footer_alpha = self.config.footer_alpha_slider.value()
+        self.config.always_show_points = self.config.always_show_points_checkbox.isChecked()
+        self.config.floating_points = self.config.floating_points_checkbox.isChecked()
+        self.config.startup_with_windows = self.config.startup_with_windows_checkbox.isChecked()
+        self.config.max_slaps = self.config.max_slaps_spinbox.value()
+        self.config.invert_cat = self.config.invert_cat_checkbox.isChecked()
+
+        # Update skin
+        selected_skin_id = self.config.skin_dropdown.currentData()
+        if selected_skin_id != self.config.current_skin:
+            self.config.current_skin = selected_skin_id
+            self.skin_manager.load_skin(selected_skin_id)
+            # Reload images and tray icon
+            self.setup_cat_images()
+            self.update_stretched_image()
+            current_skin = self.skin_manager.current_skin
+            if current_skin:
+                icon_path = os.path.join(current_skin.path, current_skin.images['idle'])
+                self.tray_icon.setIcon(QtGui.QIcon(resource_path(icon_path)))
+
+        # Update sound settings
+        self.config.sound_enabled = self.config.sound_enabled_checkbox.isChecked()
+        self.config.sound_volume = self.config.sound_volume_slider.value()
+        self.sound_manager.enabled = self.config.sound_enabled
+        self.sound_manager.set_volume(self.config.sound_volume / 100.0)
+
         # Apply settings
-        self.save_config()
+        self.config.save()
         
         # Update the footer styling with new alpha
         self.setup_footer_style()
@@ -1317,18 +1323,18 @@ class BongoCatWindow(QtWidgets.QWidget):
         self.footer_animation.setPropertyName(b"opacity")
         
         # Update footer visibility based on hidden_footer setting
-        if not self.hidden_footer:
+        if not self.config.hidden_footer:
             self.footer_widget.show()
             self.footer_opacity_effect.setOpacity(1.0)
         
         # Update UI based on new settings
-        if self.always_show_points:
+        if self.config.always_show_points:
             self.show_total_slaps()
         else:
             self.total_slaps_label.hide()
             
         # Update cat image if invert setting changed
-        if old_invert_cat != self.invert_cat:
+        if old_invert_cat != self.config.invert_cat:
             self.update_stretched_image()
 
     def reset_counter_confirm(self):
@@ -1396,67 +1402,108 @@ class BongoCatWindow(QtWidgets.QWidget):
         form_layout.setFieldGrowthPolicy(QtWidgets.QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         
         # Hidden footer option
-        self.hidden_footer_checkbox = QtWidgets.QCheckBox()
-        self.hidden_footer_checkbox.setChecked(self.hidden_footer)
-        self.hidden_footer_checkbox.setStyleSheet("color: white;")
-        form_layout.addRow(self.create_settings_label("Auto-hide footer:"), self.hidden_footer_checkbox)
+        self.config.hidden_footer_checkbox = QtWidgets.QCheckBox()
+        self.config.hidden_footer_checkbox.setChecked(self.config.hidden_footer)
+        self.config.hidden_footer_checkbox.setStyleSheet("color: white;")
+        form_layout.addRow(self.create_settings_label("Auto-hide footer:"), self.config.hidden_footer_checkbox)
         
         # Footer opacity
-        self.footer_alpha_slider = QtWidgets.QSlider(Qt.Orientation.Horizontal)
-        self.footer_alpha_slider.setRange(0, 100)
-        self.footer_alpha_slider.setValue(self.footer_alpha)
-        self.footer_alpha_slider.setTickPosition(QtWidgets.QSlider.TickPosition.TicksBelow)
-        self.footer_alpha_slider.setTickInterval(10)
+        self.config.footer_alpha_slider = QtWidgets.QSlider(Qt.Orientation.Horizontal)
+        self.config.footer_alpha_slider.setRange(0, 100)
+        self.config.footer_alpha_slider.setValue(self.config.footer_alpha)
+        self.config.footer_alpha_slider.setTickPosition(QtWidgets.QSlider.TickPosition.TicksBelow)
+        self.config.footer_alpha_slider.setTickInterval(10)
         
         footer_alpha_layout = QtWidgets.QHBoxLayout()
-        footer_alpha_layout.addWidget(self.footer_alpha_slider)
-        self.footer_alpha_value = QtWidgets.QLabel(f"{self.footer_alpha}%")
-        self.footer_alpha_value.setStyleSheet("color: white; min-width: 40px;")
-        footer_alpha_layout.addWidget(self.footer_alpha_value)
-        self.footer_alpha_slider.valueChanged.connect(
-            lambda value: self.footer_alpha_value.setText(f"{value}%")
+        footer_alpha_layout.addWidget(self.config.footer_alpha_slider)
+        self.config.footer_alpha_value = QtWidgets.QLabel(f"{self.config.footer_alpha}%")
+        self.config.footer_alpha_value.setStyleSheet("color: white; min-width: 40px;")
+        footer_alpha_layout.addWidget(self.config.footer_alpha_value)
+        self.config.footer_alpha_slider.valueChanged.connect(
+            lambda value: self.config.footer_alpha_value.setText(f"{value}%")
         )
         
         form_layout.addRow(self.create_settings_label("Footer opacity:"), footer_alpha_layout)
         
         # Always show points
-        self.always_show_points_checkbox = QtWidgets.QCheckBox()
-        self.always_show_points_checkbox.setChecked(self.always_show_points)
-        self.always_show_points_checkbox.setStyleSheet("color: white;")
-        form_layout.addRow(self.create_settings_label("Always show total:"), self.always_show_points_checkbox)
+        self.config.always_show_points_checkbox = QtWidgets.QCheckBox()
+        self.config.always_show_points_checkbox.setChecked(self.config.always_show_points)
+        self.config.always_show_points_checkbox.setStyleSheet("color: white;")
+        form_layout.addRow(self.create_settings_label("Always show total:"), self.config.always_show_points_checkbox)
         
         # Show floating points
-        self.floating_points_checkbox = QtWidgets.QCheckBox()
-        self.floating_points_checkbox.setChecked(self.floating_points)
-        self.floating_points_checkbox.setStyleSheet("color: white;")
-        form_layout.addRow(self.create_settings_label("Floating +1 animations:"), self.floating_points_checkbox)
+        self.config.floating_points_checkbox = QtWidgets.QCheckBox()
+        self.config.floating_points_checkbox.setChecked(self.config.floating_points)
+        self.config.floating_points_checkbox.setStyleSheet("color: white;")
+        form_layout.addRow(self.create_settings_label("Floating +1 animations:"), self.config.floating_points_checkbox)
         
         # Invert cat
-        self.invert_cat_checkbox = QtWidgets.QCheckBox()
-        self.invert_cat_checkbox.setChecked(self.invert_cat)
-        self.invert_cat_checkbox.setStyleSheet("color: white;")
-        form_layout.addRow(self.create_settings_label("Invert cat:"), self.invert_cat_checkbox)
+        self.config.invert_cat_checkbox = QtWidgets.QCheckBox()
+        self.config.invert_cat_checkbox.setChecked(self.config.invert_cat)
+        self.config.invert_cat_checkbox.setStyleSheet("color: white;")
+        form_layout.addRow(self.create_settings_label("Invert cat:"), self.config.invert_cat_checkbox)
         
         # Start with Windows
-        self.startup_with_windows_checkbox = QtWidgets.QCheckBox()
-        self.startup_with_windows_checkbox.setChecked(self.startup_with_windows)
-        self.startup_with_windows_checkbox.setStyleSheet("color: white;")
-        form_layout.addRow(self.create_settings_label("Start with Windows:"), self.startup_with_windows_checkbox)
+        self.config.startup_with_windows_checkbox = QtWidgets.QCheckBox()
+        self.config.startup_with_windows_checkbox.setChecked(self.config.startup_with_windows)
+        self.config.startup_with_windows_checkbox.setStyleSheet("color: white;")
+        form_layout.addRow(self.create_settings_label("Start with Windows:"), self.config.startup_with_windows_checkbox)
         
         # Max slaps (for achievements or tracking)
-        self.max_slaps_spinbox = QtWidgets.QSpinBox()
-        self.max_slaps_spinbox.setRange(0, 1000000)
-        self.max_slaps_spinbox.setValue(self.max_slaps)
-        self.max_slaps_spinbox.setSpecialValueText("No limit")
-        self.max_slaps_spinbox.setStyleSheet("""
+        self.config.max_slaps_spinbox = QtWidgets.QSpinBox()
+        self.config.max_slaps_spinbox.setRange(0, 1000000)
+        self.config.max_slaps_spinbox.setValue(self.config.max_slaps)
+        self.config.max_slaps_spinbox.setSpecialValueText("No limit")
+        self.config.max_slaps_spinbox.setStyleSheet("""
             color: white; 
             background-color: rgba(255, 255, 255, 0.1);
             border: 1px solid rgba(255, 255, 255, 0.2);
             border-radius: 4px;
             padding: 2px;
         """)
-        form_layout.addRow(self.create_settings_label("Max slap count:"), self.max_slaps_spinbox)
-        
+        form_layout.addRow(self.create_settings_label("Max slap count:"), self.config.max_slaps_spinbox)
+
+        # Skin selection
+        self.config.skin_dropdown = QtWidgets.QComboBox()
+        self.config.skin_dropdown.setStyleSheet("""
+            color: white;
+            background-color: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 4px;
+            padding: 4px;
+        """)
+        # Populate with available skins
+        for skin_id, skin_info in self.skin_manager.available_skins.items():
+            self.config.skin_dropdown.addItem(skin_info.name, skin_id)
+        # Set current selection
+        current_index = self.config.skin_dropdown.findData(self.config.current_skin)
+        if current_index >= 0:
+            self.config.skin_dropdown.setCurrentIndex(current_index)
+        form_layout.addRow(self.create_settings_label("Cat Skin:"), self.config.skin_dropdown)
+
+        # Sound enabled toggle
+        self.config.sound_enabled_checkbox = QtWidgets.QCheckBox()
+        self.config.sound_enabled_checkbox.setChecked(self.config.sound_enabled)
+        self.config.sound_enabled_checkbox.setStyleSheet("color: white;")
+        form_layout.addRow(self.create_settings_label("Enable Sounds:"), self.config.sound_enabled_checkbox)
+
+        # Sound volume slider
+        self.config.sound_volume_slider = QtWidgets.QSlider(Qt.Orientation.Horizontal)
+        self.config.sound_volume_slider.setRange(0, 100)
+        self.config.sound_volume_slider.setValue(self.config.sound_volume)
+        self.config.sound_volume_slider.setTickPosition(QtWidgets.QSlider.TickPosition.TicksBelow)
+        self.config.sound_volume_slider.setTickInterval(10)
+
+        sound_volume_layout = QtWidgets.QHBoxLayout()
+        sound_volume_layout.addWidget(self.config.sound_volume_slider)
+        self.config.sound_volume_value = QtWidgets.QLabel(f"{self.config.sound_volume}%")
+        self.config.sound_volume_value.setStyleSheet("color: white; min-width: 40px;")
+        sound_volume_layout.addWidget(self.config.sound_volume_value)
+        self.config.sound_volume_slider.valueChanged.connect(
+            lambda value: self.config.sound_volume_value.setText(f"{value}%")
+        )
+        form_layout.addRow(self.create_settings_label("Sound Volume:"), sound_volume_layout)
+
         main_layout.addLayout(form_layout)
         
         # Add buttons layout
@@ -1552,6 +1599,121 @@ class BongoCatWindow(QtWidgets.QWidget):
         apply_button.setStyleSheet("background-color: #2ecc71; color: white;")
         close_button.setStyleSheet("background-color: #3498db; color: white;")
 
+    def show_achievement_notification(self, achievement):
+        """Show a notification when an achievement is unlocked.
+
+        Args:
+            achievement: Achievement object that was unlocked
+        """
+        # Create notification label
+        notif = QtWidgets.QLabel(self)
+        notif.setStyleSheet("""
+            QLabel {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 rgba(255, 215, 0, 230),
+                    stop:1 rgba(255, 165, 0, 230)
+                );
+                color: #2c3e50;
+                font: bold 14px 'Segoe UI';
+                padding: 12px 16px;
+                border-radius: 8px;
+                border: 2px solid rgba(255, 215, 0, 255);
+            }
+        """)
+        notif.setText(f"🏆 {achievement.name}\n{achievement.description}")
+        notif.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        notif.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
+
+        # Calculate Y position based on existing notifications
+        notif.adjustSize()
+        y_offset = 20
+        for existing_notif in self.active_notifications:
+            if existing_notif and not existing_notif.isHidden():
+                y_offset += existing_notif.height() + 10  # 10px spacing between notifications
+
+        # Position at top center of window, stacking vertically
+        notif.move(
+            (self.width() - notif.width()) // 2,
+            y_offset
+        )
+
+        # Add to active notifications list
+        self.active_notifications.append(notif)
+
+        notif.show()
+        notif.raise_()  # Ensure it's on top
+
+        # Fade in animation
+        opacity_effect = QtWidgets.QGraphicsOpacityEffect(notif)
+        notif.setGraphicsEffect(opacity_effect)
+
+        fade_in = QtCore.QPropertyAnimation(opacity_effect, b"opacity")
+        fade_in.setDuration(500)
+        fade_in.setStartValue(0.0)
+        fade_in.setEndValue(1.0)
+
+        # Store animation reference to prevent garbage collection
+        notif.fade_in_animation = fade_in
+        fade_in.start()
+
+        # Auto-hide after 5 seconds - use QTimer with proper connection
+        timer = QtCore.QTimer(self)  # Parent to self to prevent garbage collection
+        timer.setSingleShot(True)
+        timer.timeout.connect(lambda: self.fade_out_notification(notif, timer))
+        notif.timer = timer  # Also store on widget for extra safety
+        timer.start(5000)
+
+    def fade_out_notification(self, notif, timer=None):
+        """Fade out and remove notification.
+
+        Args:
+            notif: Notification label widget
+            timer: Optional timer to clean up
+        """
+        # Check if widget still exists and is valid
+        if notif is None or not notif.isVisible():
+            if timer:
+                timer.deleteLater()
+            return
+
+        try:
+            opacity_effect = notif.graphicsEffect()
+            if opacity_effect:
+                fade_out = QtCore.QPropertyAnimation(opacity_effect, b"opacity")
+                fade_out.setDuration(500)
+                fade_out.setStartValue(1.0)
+                fade_out.setEndValue(0.0)
+
+                # Store animation reference and connect cleanup
+                notif.fade_out_animation = fade_out
+
+                def cleanup():
+                    # Remove from active notifications
+                    if notif in self.active_notifications:
+                        self.active_notifications.remove(notif)
+                    if notif and not notif.isHidden():
+                        notif.deleteLater()
+                    if timer:
+                        timer.deleteLater()
+
+                fade_out.finished.connect(cleanup)
+                fade_out.start()
+            else:
+                # No effect, just delete
+                if notif in self.active_notifications:
+                    self.active_notifications.remove(notif)
+                notif.deleteLater()
+                if timer:
+                    timer.deleteLater()
+        except RuntimeError:
+            # Widget already deleted
+            if notif in self.active_notifications:
+                self.active_notifications.remove(notif)
+            if timer:
+                timer.deleteLater()
+            pass
+
     def create_settings_label(self, text):
         """Create a styled label for settings form layout."""
         label = QtWidgets.QLabel(text)
@@ -1560,187 +1722,3 @@ class BongoCatWindow(QtWidgets.QWidget):
             font: 12px 'Segoe UI';
         """)
         return label
-
-    def update_slap_count(self):
-        """Update only the slap count in the config file without changing other settings."""
-        config_path = resource_path("bongo.ini")
-        try:
-            self.config["Settings"]["slaps"] = str(self.slaps)
-            
-            with open(config_path, "w") as config_file:
-                self.config.write(config_file)
-        except Exception as e:
-            print(f"Error updating slap count: {e}")
-
-# ----------------------
-#  Global Listeners
-# ----------------------
-def start_listeners(trigger_callback):
-    """Start global listeners for keyboard and mouse."""
-    active_keys = set()
-
-    def on_press(key):
-        if key not in active_keys:
-            active_keys.add(key)
-            trigger_callback()
-
-    def on_release(key):
-        if key in active_keys:
-            active_keys.remove(key)
-
-    def on_click(x, y, button, pressed):
-        if pressed:
-            trigger_callback()
-            
-    def check_controller():
-        """Check for controller inputs and trigger slap when buttons are pressed."""
-        global PYGAME_AVAILABLE
-        if not PYGAME_AVAILABLE:
-            return
-        
-        try:
-            pygame.init()
-            pygame.joystick.init()
-            
-            # Create an input buffer/queue to ensure no inputs are missed
-            from collections import deque
-            input_queue = deque(maxlen=100)  # Buffer up to 100 inputs
-            
-            # Track which buttons are currently pressed
-            active_buttons = set()
-            active_axes = set()
-            active_hats = set()
-            last_axes_values = {}
-            
-            # Loop to check for controller inputs
-            while True:
-                # Process all waiting events rather than just pumping
-                for event in pygame.event.get():
-                    # Handle button events explicitly
-                    if event.type == pygame.JOYBUTTONDOWN:
-                        button_id = f"joy{event.joy}_button{event.button}"
-                        if button_id not in active_buttons:
-                            active_buttons.add(button_id)
-                            input_queue.append(1)  # Add input to queue
-                    
-                    elif event.type == pygame.JOYBUTTONUP:
-                        button_id = f"joy{event.joy}_button{event.button}"
-                        if button_id in active_buttons:
-                            active_buttons.remove(button_id)
-                    
-                    # Handle axis motion events
-                    elif event.type == pygame.JOYAXISMOTION:
-                        axis_id = f"joy{event.joy}_axis{event.axis}"
-                        axis_value = event.value
-                        
-                        # Get previous value
-                        prev_value = last_axes_values.get(axis_id, 0)
-                        
-                        # For triggers (typically 2 and 5 on Xbox controllers)
-                        is_trigger = event.axis in (2, 5)
-                        
-                        # Detect significant movement or crossing threshold
-                        if is_trigger:
-                            # For triggers, only detect initial press and full release
-                            # This prevents multiple inputs during a single pull
-                            trigger_active_key = f"{axis_id}_active"
-                            if axis_value > 0.5 and trigger_active_key not in active_axes:
-                                # Trigger pressed past halfway point
-                                active_axes.add(trigger_active_key)
-                                input_queue.append(1)
-                            elif axis_value < 0.1 and trigger_active_key in active_axes:
-                                # Trigger released
-                                active_axes.remove(trigger_active_key)
-                        else:
-                            # For regular axes, detect crossing from center to edge
-                            axis_key = f"{axis_id}_{1 if axis_value > 0 else -1}"
-                            if abs(axis_value) > 0.7 and abs(prev_value) < 0.3:
-                                if axis_key not in active_axes:
-                                    active_axes.add(axis_key)
-                                    input_queue.append(1)
-                            elif abs(axis_value) < 0.3 and axis_key in active_axes:
-                                active_axes.remove(axis_key)
-                        
-                        # Update last value after processing
-                        last_axes_values[axis_id] = axis_value
-                
-                    # Handle hat motion events
-                    elif event.type == pygame.JOYHATMOTION:
-                        hat_id = f"joy{event.joy}_hat{event.hat}"
-                        hat_value = event.value
-                        hat_key = f"{hat_id}_{hat_value[0]},{hat_value[1]}"
-                        
-                        # Only trigger on non-zero hat values
-                        if hat_value != (0, 0):
-                            if hat_key not in active_hats:
-                                active_hats.add(hat_key)
-                                input_queue.append(1)
-                        else:
-                            # Remove any active hat entries for this hat
-                            for key in list(active_hats):
-                                if key.startswith(f"{hat_id}_"):
-                                    active_hats.remove(key)
-                
-                # Manually check joysticks as a fallback (for controllers with no proper events)
-                for i in range(pygame.joystick.get_count()):
-                    try:
-                        joystick = pygame.joystick.Joystick(i)
-                        joystick.init()
-                        
-                        # Check buttons that might have been missed by events
-                        for button_idx in range(joystick.get_numbuttons()):
-                            button_state = joystick.get_button(button_idx)
-                            button_id = f"joy{i}_button{button_idx}"
-                            
-                            if button_state and button_id not in active_buttons:
-                                active_buttons.add(button_id)
-                                input_queue.append(1)
-                            elif not button_state and button_id in active_buttons:
-                                active_buttons.remove(button_id)
-                    except:
-                        pass  # Skip any joystick that has issues
-                
-                # Process the input queue
-                while input_queue:
-                    # Process each input individually to ensure none are missed
-                    input_queue.popleft()
-                    trigger_callback()
-                
-                # Ultra-short sleep to prevent CPU overload but still catch all inputs
-                time.sleep(0.001)  # 1ms polling interval
-                
-        except Exception as e:
-            print(f"Controller listener error: {e}")
-            # If pygame fails, disable it
-            PYGAME_AVAILABLE = False
-
-    keyboard_listener = keyboard.Listener(on_press=on_press, on_release=on_release)
-    keyboard_listener.start()
-
-    mouse_listener = mouse.Listener(on_click=lambda x, y, button, pressed: trigger_callback() if pressed else None)
-    mouse_listener.start()
-    
-    # Start controller listener in a separate thread
-    if PYGAME_AVAILABLE:
-        controller_thread = threading.Thread(target=check_controller, daemon=True)
-        controller_thread.start()
-
-    keyboard_listener.join()
-    mouse_listener.join()
-
-def main():
-    app = QtWidgets.QApplication(sys.argv)
-    window = BongoCatWindow()
-    window.show()
-
-    listener_thread = threading.Thread(
-        target=start_listeners,
-        args=(window.trigger_slap.emit,),
-        daemon=True
-    )
-    listener_thread.start()
-
-    sys.exit(app.exec_())
-
-if __name__ == "__main__":
-    main()

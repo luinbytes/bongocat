@@ -1,0 +1,12 @@
+{
+  "name": "Retro Cat",
+  "author": "Bongo Cat Team",
+  "version": "1.0.0",
+  "description": "A nostalgic retro-style cat with classic vibes",
+  "images": {
+    "idle": "cat-rest.png",
+    "left": "cat-left.png",
+    "right": "cat-right.png"
+  },
+  "rotation_degrees": -13
+}
