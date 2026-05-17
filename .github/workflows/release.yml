@@ -95,16 +95,31 @@ jobs:
       - name: Build macOS DMG
         if: matrix.os == 'macos-latest'
         run: |
+          set -euo pipefail
+
           if [ ! -d "dist/BongoCat.app" ]; then
             echo "dist/BongoCat.app missing"
             exit 1
           fi
-          hdiutil create \
-            -volname "Bongo Cat" \
-            -srcfolder "dist/BongoCat.app" \
-            -ov \
-            -format UDZO \
-            "dist/BongoCat-macos.dmg"
+
+          # The hosted macOS runner can briefly keep files in the freshly
+          # generated .app busy. Retry the DMG creation before failing CI.
+          for attempt in 1 2 3 4 5; do
+            rm -f "dist/BongoCat-macos.dmg"
+            if hdiutil create \
+              -volname "Bongo Cat" \
+              -srcfolder "dist/BongoCat.app" \
+              -ov \
+              -format UDZO \
+              "dist/BongoCat-macos.dmg"; then
+              exit 0
+            fi
+            echo "hdiutil create failed on attempt ${attempt}; retrying..."
+            sleep 5
+          done
+
+          echo "hdiutil create failed after retries"
+          exit 1
 
       # ---- Linux: build an AppImage from the single-file PyInstaller binary ----
       - name: Build Linux AppImage
