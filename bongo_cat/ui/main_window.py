@@ -65,6 +65,7 @@ class BongoCatWindow(QtWidgets.QWidget):
         self.is_paused = False
         self.is_hovering = False
         self.drag_position = None
+        self.footer_dragging = False
         self.current_side = "left"
         self.active_notifications = []  # Track active achievement notifications
         
@@ -309,9 +310,23 @@ class BongoCatWindow(QtWidgets.QWidget):
 
     def setup_footer_style(self):
         """Setup footer styling."""
+        if getattr(self, 'footer_dragging', False):
+            footer_border = "1px solid rgba(255, 255, 255, 70)"
+            footer_background_boost = 12
+        else:
+            footer_border = "1px solid rgba(255, 255, 255, 22)"
+            footer_background_boost = 0
+
+        footer_alpha = min(
+            255,
+            self.config.footer_alpha * anim.FOOTER_ALPHA_MULTIPLIER
+            + footer_background_boost
+        )
+
         self.footer_widget.setStyleSheet(f"""
             QWidget {{
-                background: rgba(40, 44, 52, {self.config.footer_alpha * anim.FOOTER_ALPHA_MULTIPLIER});
+                background: rgba(40, 44, 52, {footer_alpha});
+                border: {footer_border};
                 border-radius: 12px;
                 padding: 4px;
             }}
@@ -333,12 +348,6 @@ class BongoCatWindow(QtWidgets.QWidget):
                 background: rgba(255, 255, 255, 25);
             }}
         """)
-
-        footer_shadow = QGraphicsDropShadowEffect()
-        footer_shadow.setBlurRadius(12)
-        footer_shadow.setOffset(0, 2)
-        footer_shadow.setColor(QtGui.QColor(0, 0, 0, 40))
-        self.footer_widget.setGraphicsEffect(footer_shadow)
 
     def setup_footer_layout(self):
         """Setup footer layout and components."""
@@ -758,12 +767,8 @@ class BongoCatWindow(QtWidgets.QWidget):
                     self.original_opacity = self.footer_opacity_effect.opacity()
                 else:
                     self.original_opacity = 1.0
-                self.footer_opacity_effect = None
-                shadow = QGraphicsDropShadowEffect()
-                shadow.setBlurRadius(20)
-                shadow.setOffset(0, 0)
-                shadow.setColor(QtGui.QColor(0, 0, 0, 100))
-                self.footer_widget.setGraphicsEffect(shadow)
+                self.footer_dragging = True
+                self.setup_footer_style()
                 event.accept()
 
     def mouseMoveEvent(self, event):
@@ -776,6 +781,8 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Handle mouse release events."""
         if event.button() == Qt.MouseButton.LeftButton:
             self.setCursor(Qt.CursorShape.ArrowCursor)
+            self.footer_dragging = False
+            self.setup_footer_style()
 
             # Save window position if it was dragged
             if self.drag_position:
@@ -784,18 +791,15 @@ class BongoCatWindow(QtWidgets.QWidget):
                 self.config.window_y = pos.y()
                 self.config.save()
 
-            # Recreate the opacity effect to ensure it's valid
-            self.footer_opacity_effect = QtWidgets.QGraphicsOpacityEffect(self.footer_widget)
-            self.footer_widget.setGraphicsEffect(self.footer_opacity_effect)
-            self.footer_animation.setTargetObject(self.footer_opacity_effect)
-            self.footer_animation.setPropertyName(b"opacity")
-            
-            if not self.is_hovering and self.config.hidden_footer:
+            if not self._footer_effect_alive():
+                self.original_opacity = 1.0
+
+            if not self.is_hovering and self.config.hidden_footer and self._footer_effect_alive():
                 self.footer_opacity_effect.setOpacity(0.0)
                 self.footer_widget.hide()
-            elif hasattr(self, 'original_opacity'):
+            elif hasattr(self, 'original_opacity') and self._footer_effect_alive():
                 self.footer_opacity_effect.setOpacity(self.original_opacity)
-            else:
+            elif self._footer_effect_alive():
                 self.footer_opacity_effect.setOpacity(1.0)
             
             event.accept()
