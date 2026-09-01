@@ -1315,10 +1315,17 @@ class BongoCatWindow(QtWidgets.QWidget):
         self.config.max_slaps = self.config.max_slaps_spinbox.value()
         self.config.invert_cat = self.config.invert_cat_checkbox.isChecked()
 
-        # Update skin
+        # Save every selection before refreshing runtime objects. If a Qt or
+        # audio object fails, a restart can still load the requested settings.
         selected_skin_id = self.config.skin_dropdown.currentData()
-        if selected_skin_id != self.config.current_skin:
-            self.config.current_skin = selected_skin_id
+        skin_changed = selected_skin_id != self.config.current_skin
+        self.config.current_skin = selected_skin_id
+        self.config.sound_enabled = self.config.sound_enabled_checkbox.isChecked()
+        self.config.sound_volume = self.config.sound_volume_slider.value()
+        self.config.save()
+
+        # Update skin
+        if skin_changed:
             self.skin_manager.load_skin(selected_skin_id)
             # Reload images and tray icon
             self.setup_cat_images()
@@ -1329,13 +1336,8 @@ class BongoCatWindow(QtWidgets.QWidget):
                 self.tray_icon.setIcon(QtGui.QIcon(resource_path(icon_path)))
 
         # Update sound settings
-        self.config.sound_enabled = self.config.sound_enabled_checkbox.isChecked()
-        self.config.sound_volume = self.config.sound_volume_slider.value()
         self.sound_manager.enabled = self.config.sound_enabled
         self.sound_manager.set_volume(self.config.sound_volume / 100.0)
-
-        # Apply settings
-        self.config.save()
         
         # Stop footer callbacks while settings rewrite style and visibility.
         self.footer_animation.stop()
@@ -1364,6 +1366,19 @@ class BongoCatWindow(QtWidgets.QWidget):
         # Update cat image if invert setting changed
         if old_invert_cat != self.config.invert_cat:
             self.update_stretched_image()
+
+    def apply_settings_safely(self):
+        """Keep exceptions in the Qt Apply callback from aborting the app."""
+        try:
+            self.apply_settings()
+        except Exception as error:
+            logger.exception("Failed to apply settings")
+            QtWidgets.QMessageBox.critical(
+                self.settings_panel,
+                "Could not apply all settings",
+                "Bongo Cat is still running, but some settings may need a restart. "
+                f"Restart Bongo Cat and share bongo.log if this continues.\n\n{error}",
+            )
 
     def reset_counter_confirm(self):
         """Confirm before resetting the counter."""
@@ -1557,7 +1572,7 @@ class BongoCatWindow(QtWidgets.QWidget):
             padding: 6px 12px;
             border-radius: 4px;
         """)
-        apply_button.clicked.connect(self.apply_settings)
+        apply_button.clicked.connect(self.apply_settings_safely)
         
         # Close button
         close_button = QtWidgets.QPushButton("Close")
