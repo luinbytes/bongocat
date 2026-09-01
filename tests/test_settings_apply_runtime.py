@@ -42,7 +42,11 @@ class TestSettingsApplyRuntime(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as appdata:
             env = os.environ.copy()
-            env.update(APPDATA=appdata, QT_QPA_PLATFORM="offscreen")
+            env.update(
+                APPDATA=appdata,
+                PYNPUT_BACKEND="dummy",
+                QT_QPA_PLATFORM="offscreen",
+            )
             result = subprocess.run(
                 [sys.executable, "-c", script],
                 cwd=Path(__file__).parents[1],
