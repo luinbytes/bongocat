@@ -53,9 +53,11 @@ Hover the cat → ⚙ Settings opens the GUI. Click 📄 to open the ini directl
 
 Config file lives at:
 
-- **Windows**: `%APPDATA%/bongo.ini`
-- **macOS**: `~/Library/Application Support/bongo.ini`
-- **Linux**: `~/.config/bongo.ini`
+- **Windows**: `%APPDATA%\BongoCat\bongo.ini`
+- **macOS**: `~/.config/BongoCat/bongo.ini`
+- **Linux**: `~/.config/BongoCat/bongo.ini`
+
+Direct INI edits load the next time Bongo Cat starts. The app does not reload the file while it is running.
 
 | Key | Effect | Default |
 |-----|--------|---------|
