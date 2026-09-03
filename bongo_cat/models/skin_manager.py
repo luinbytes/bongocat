@@ -6,6 +6,8 @@ import logging
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 
+from ..utils import resource_path
+
 logger = logging.getLogger("BongoCat")
 
 
@@ -47,13 +49,13 @@ class SkinManager:
         current_skin: Currently loaded skin
     """
 
-    def __init__(self, skins_dir: str = "skins"):
+    def __init__(self, skins_dir: Optional[str] = None):
         """Initialize the skin manager.
 
         Args:
             skins_dir: Path to the skins directory
         """
-        self.skins_dir = skins_dir
+        self.skins_dir = resource_path("skins") if skins_dir is None else skins_dir
         self.available_skins: Dict[str, SkinInfo] = {}
         self.current_skin: Optional[SkinInfo] = None
         self._discover_skins()

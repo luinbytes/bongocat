@@ -12,6 +12,69 @@ import unittest
 
 @unittest.skipUnless(importlib.util.find_spec("PyQt5"), "PyQt5 is not installed")
 class TestSettingsApplyRuntime(unittest.TestCase):
+    def test_apply_from_unrelated_cwd_discovers_skins_and_persists_settings(self):
+        script = textwrap.dedent(
+            """
+            from PyQt5 import QtCore, QtTest, QtWidgets
+            from bongo_cat.ui.main_window import BongoCatWindow
+
+            app = QtWidgets.QApplication([])
+            window = BongoCatWindow()
+            window.open_settings_dialog()
+            app.processEvents()
+            apply_button = next(
+                button
+                for button in window.settings_panel.findChildren(QtWidgets.QPushButton)
+                if button.text() == "Apply"
+            )
+            errors = []
+            QtWidgets.QMessageBox.critical = lambda *_args: errors.append("apply-error")
+            selected_skin = window.config.skin_dropdown.currentData()
+            print(f"skin-options={window.config.skin_dropdown.count()}", flush=True)
+            print(f"selected-skin={selected_skin}", flush=True)
+            print(f"selected-skin-type={type(selected_skin).__name__}", flush=True)
+            window.config.sound_enabled_checkbox.setChecked(False)
+            QtTest.QTest.mouseClick(apply_button, QtCore.Qt.LeftButton)
+            app.processEvents()
+            reloaded = window.config.__class__()
+            print(f"apply-errors={len(errors)}", flush=True)
+            print(f"saved-sound-enabled={reloaded.sound_enabled}", flush=True)
+            window.tray_icon.hide()
+            window.settings_panel.hide()
+            window.hide()
+            app.quit()
+            """
+        )
+
+        repo_root = Path(__file__).parents[1].resolve()
+        with tempfile.TemporaryDirectory() as appdata:
+            with tempfile.TemporaryDirectory() as unrelated_cwd:
+                env = os.environ.copy()
+                python_path = env.get("PYTHONPATH")
+                env.update(
+                    APPDATA=appdata,
+                    PYNPUT_BACKEND="dummy",
+                    PYTHONPATH=os.pathsep.join(
+                        path for path in (str(repo_root), python_path) if path
+                    ),
+                    QT_QPA_PLATFORM="offscreen",
+                )
+                result = subprocess.run(
+                    [sys.executable, "-c", script],
+                    cwd=unrelated_cwd,
+                    env=env,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertIn("skin-options=3", result.stdout)
+        self.assertIn("selected-skin=default", result.stdout)
+        self.assertIn("selected-skin-type=str", result.stdout)
+        self.assertIn("apply-errors=0", result.stdout)
+        self.assertIn("saved-sound-enabled=False", result.stdout)
+
     def test_apply_exception_does_not_abort_qt_process(self):
         script = textwrap.dedent(
             """

@@ -83,8 +83,7 @@ class BongoCatWindow(QtWidgets.QWidget):
             self.show_total_slaps()
 
         # Increment launch count and check achievements
-        self.config.launch_count += 1
-        self.config.save()
+        self.config.increment_launch_count()
 
         # Check for time-based achievements
         time_achievements = self.achievement_manager.check_time_based()
@@ -787,9 +786,7 @@ class BongoCatWindow(QtWidgets.QWidget):
             # Save window position if it was dragged
             if self.drag_position:
                 pos = self.pos()
-                self.config.window_x = pos.x()
-                self.config.window_y = pos.y()
-                self.config.save()
+                self.config.update_window_position(pos.x(), pos.y())
 
             if not self._footer_effect_alive():
                 self.original_opacity = 1.0
@@ -946,10 +943,7 @@ class BongoCatWindow(QtWidgets.QWidget):
             x = (geometry.width() - self.width()) // 2
             y = (geometry.height() - self.height()) // 2
             self.move(x, y)
-            # Save this initial position
-            self.config.window_x = x
-            self.config.window_y = y
-            self.config.save()
+            self.config.update_window_position(x, y)
 
     # ----------------------
     #  Configuration
@@ -1317,12 +1311,12 @@ class BongoCatWindow(QtWidgets.QWidget):
 
         # Save every selection before refreshing runtime objects. If a Qt or
         # audio object fails, a restart can still load the requested settings.
-        selected_skin_id = self.config.skin_dropdown.currentData()
+        selected_skin_id = self._selected_skin_id()
         skin_changed = selected_skin_id != self.config.current_skin
         self.config.current_skin = selected_skin_id
         self.config.sound_enabled = self.config.sound_enabled_checkbox.isChecked()
         self.config.sound_volume = self.config.sound_volume_slider.value()
-        self.config.save()
+        self.config.save_user_settings()
 
         # Update skin
         if skin_changed:
@@ -1367,6 +1361,17 @@ class BongoCatWindow(QtWidgets.QWidget):
         if old_invert_cat != self.config.invert_cat:
             self.update_stretched_image()
 
+    def _selected_skin_id(self) -> str:
+        selected_skin_id = self.config.skin_dropdown.currentData()
+        if (
+            isinstance(selected_skin_id, str)
+            and selected_skin_id in self.skin_manager.available_skins
+        ):
+            return selected_skin_id
+
+        logger.warning("No valid skin is selected; keeping the current skin")
+        return self.config.current_skin
+
     def apply_settings_safely(self):
         """Keep exceptions in the Qt Apply callback from aborting the app."""
         try:
@@ -1402,6 +1407,7 @@ class BongoCatWindow(QtWidgets.QWidget):
         """Set up the settings panel as a separate window."""
         # Create settings panel as a top-level window
         self.settings_panel = SettingsPanelWidget(self)
+        self.settings_panel.setObjectName("settingsPanel")
         self.settings_panel.setWindowTitle("Bongo Cat Settings")
         
         # Set window flags for a dialog-like appearance
@@ -1508,6 +1514,7 @@ class BongoCatWindow(QtWidgets.QWidget):
 
         # Skin selection
         self.config.skin_dropdown = QtWidgets.QComboBox()
+        self.config.skin_dropdown.setObjectName("skinDropdown")
         self.config.skin_dropdown.setStyleSheet("""
             color: white;
             background-color: rgba(255, 255, 255, 0.1);
@@ -1522,10 +1529,12 @@ class BongoCatWindow(QtWidgets.QWidget):
         current_index = self.config.skin_dropdown.findData(self.config.current_skin)
         if current_index >= 0:
             self.config.skin_dropdown.setCurrentIndex(current_index)
+        self.config.skin_dropdown.setEnabled(self.config.skin_dropdown.count() > 0)
         form_layout.addRow(self.create_settings_label("Cat Skin:"), self.config.skin_dropdown)
 
         # Sound enabled toggle
         self.config.sound_enabled_checkbox = QtWidgets.QCheckBox()
+        self.config.sound_enabled_checkbox.setObjectName("soundEnabledCheckbox")
         self.config.sound_enabled_checkbox.setChecked(self.config.sound_enabled)
         self.config.sound_enabled_checkbox.setStyleSheet("color: white;")
         form_layout.addRow(self.create_settings_label("Enable Sounds:"), self.config.sound_enabled_checkbox)
@@ -1565,6 +1574,7 @@ class BongoCatWindow(QtWidgets.QWidget):
         
         # Apply button
         apply_button = QtWidgets.QPushButton("Apply")
+        apply_button.setObjectName("applySettingsButton")
         apply_button.setStyleSheet("""
             background-color: #2ecc71;
             color: white;

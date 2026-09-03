@@ -8,6 +8,8 @@ import configparser
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from bongo_cat.models.config import ConfigManager
+
 
 class TestConfigDefaults(unittest.TestCase):
     """Test configuration default values."""
@@ -168,6 +170,87 @@ class TestConfigFileOperations(unittest.TestCase):
 
         self.assertEqual(new_config.get("Settings", "slaps"), "100")
         self.assertEqual(new_config.get("Settings", "hidden_footer"), "true")
+
+    def _edit_config(self, **updates):
+        config = configparser.ConfigParser()
+        config.read(self.config_path)
+        for key, value in updates.items():
+            config["Settings"][key] = value
+        with open(self.config_path, "w") as config_file:
+            config.write(config_file)
+
+    def _read_settings(self):
+        config = configparser.ConfigParser()
+        config.read(self.config_path)
+        return config["Settings"]
+
+    def test_slap_count_update_preserves_completed_external_edit(self):
+        manager = ConfigManager(self.config_path)
+        self._edit_config(sound_enabled="false", current_skin="retro")
+
+        manager.update_slap_count(41)
+
+        settings = self._read_settings()
+        restarted = ConfigManager(self.config_path)
+        self.assertEqual("41", settings["slaps"])
+        self.assertEqual("false", settings["sound_enabled"])
+        self.assertEqual("retro", settings["current_skin"])
+        self.assertEqual(41, restarted.slaps)
+        self.assertFalse(restarted.sound_enabled)
+        self.assertEqual("retro", restarted.current_skin)
+
+    def test_window_position_update_preserves_other_external_values(self):
+        manager = ConfigManager(self.config_path)
+        self._edit_config(sound_enabled="false", current_skin="retro", slaps="12")
+
+        manager.update_window_position(120, 240)
+
+        settings = self._read_settings()
+        self.assertEqual("120", settings["window_x"])
+        self.assertEqual("240", settings["window_y"])
+        self.assertEqual("12", settings["slaps"])
+        self.assertEqual("false", settings["sound_enabled"])
+        self.assertEqual("retro", settings["current_skin"])
+
+    def test_launch_count_update_preserves_other_external_values(self):
+        manager = ConfigManager(self.config_path)
+        self._edit_config(sound_enabled="false", current_skin="retro", slaps="12")
+
+        manager.increment_launch_count()
+
+        settings = self._read_settings()
+        self.assertEqual("1", settings["launch_count"])
+        self.assertEqual("12", settings["slaps"])
+        self.assertEqual("false", settings["sound_enabled"])
+        self.assertEqual("retro", settings["current_skin"])
+
+    def test_scoped_update_leaves_malformed_config_untouched(self):
+        manager = ConfigManager(self.config_path)
+        malformed = "[Settings\nsound_enabled = false\n"
+        with open(self.config_path, "w") as config_file:
+            config_file.write(malformed)
+
+        manager.update_slap_count(9)
+
+        with open(self.config_path, encoding="utf-8") as config_file:
+            self.assertEqual(malformed, config_file.read())
+        self.assertEqual(9, manager.slaps)
+
+    def test_scoped_update_preserves_legacy_windows_encoding(self):
+        manager = ConfigManager(self.config_path)
+        legacy_config = "[Settings]\ncurrent_skin = caf\N{LATIN SMALL LETTER E WITH ACUTE}\n"
+        with open(self.config_path, "w", encoding="cp1252") as config_file:
+            config_file.write(legacy_config)
+
+        manager.update_slap_count(2)
+
+        config = configparser.ConfigParser()
+        with open(self.config_path, encoding="cp1252") as config_file:
+            config.read_file(config_file)
+        self.assertEqual("2", config["Settings"]["slaps"])
+        self.assertEqual("caf\N{LATIN SMALL LETTER E WITH ACUTE}", config["Settings"]["current_skin"])
+        with open(self.config_path, "rb") as config_file:
+            self.assertIn(b"caf\xe9", config_file.read())
 
 
 if __name__ == '__main__':

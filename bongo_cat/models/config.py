@@ -2,8 +2,10 @@
 
 import os
 import configparser
+import locale
 import logging
-from typing import Any, Dict
+import tempfile
+from typing import Any, Dict, Tuple
 from ..utils import resource_path
 
 logger = logging.getLogger("BongoCat")
@@ -212,31 +214,85 @@ class ConfigManager:
         except (ValueError, TypeError):
             return default
 
-    def save(self) -> None:
-        """Save current configuration to file."""
+    def _read_latest_config(self) -> Tuple[configparser.ConfigParser, str]:
+        encodings = ("utf-8", locale.getpreferredencoding(False), "cp1252")
+        tried_encodings = set()
+        last_decode_error = None
+
+        for encoding in encodings:
+            normalized_encoding = encoding.lower().replace("_", "-")
+            if normalized_encoding in tried_encodings:
+                continue
+            tried_encodings.add(normalized_encoding)
+
+            latest = configparser.ConfigParser()
+            try:
+                with open(self.config_path, encoding=encoding) as config_file:
+                    latest.read_file(config_file)
+                return latest, encoding
+            except UnicodeDecodeError as error:
+                last_decode_error = error
+
+        if last_decode_error is not None:
+            raise last_decode_error
+        return configparser.ConfigParser(), "utf-8"
+
+    def _write_updates(self, updates: Dict[str, str]) -> None:
+        latest = configparser.ConfigParser()
+        config_encoding = "utf-8"
+        temporary_path = None
         try:
-            self.config["Settings"]["slaps"] = str(self.slaps)
-            self.config["Settings"]["hidden_footer"] = str(self.hidden_footer).lower()
-            self.config["Settings"]["footer_alpha"] = str(self.footer_alpha)
-            self.config["Settings"]["always_show_points"] = str(self.always_show_points).lower()
-            self.config["Settings"]["floating_points"] = str(self.floating_points).lower()
-            self.config["Settings"]["startup_with_windows"] = str(self.startup_with_windows).lower()
-            self.config["Settings"]["max_slaps"] = str(self.max_slaps)
-            self.config["Settings"]["invert_cat"] = str(self.invert_cat).lower()
-            self.config["Settings"]["current_skin"] = self.current_skin
-            self.config["Settings"]["sound_enabled"] = str(self.sound_enabled).lower()
-            self.config["Settings"]["sound_volume"] = str(self.sound_volume)
-            self.config["Settings"]["window_x"] = str(self.window_x)
-            self.config["Settings"]["window_y"] = str(self.window_y)
-            self.config["Settings"]["launch_count"] = str(self.launch_count)
+            if os.path.exists(self.config_path):
+                latest, config_encoding = self._read_latest_config()
 
-            with open(self.config_path, "w") as config_file:
-                self.config.write(config_file)
+            for section, values in self.DEFAULT_CONFIG.items():
+                if section not in latest:
+                    latest[section] = {}
+                for key, value in values.items():
+                    if key not in latest[section]:
+                        latest[section][key] = value
 
-            logger.debug("Configuration saved successfully")
+            for key, value in updates.items():
+                latest["Settings"][key] = value
 
-        except (IOError, OSError) as e:
-            logger.error(f"Error saving config to {self.config_path}: {e}")
+            config_dir = os.path.dirname(os.path.abspath(self.config_path))
+            with tempfile.NamedTemporaryFile(
+                "w",
+                encoding=config_encoding,
+                dir=config_dir,
+                prefix=".bongo-",
+                suffix=".ini.tmp",
+                delete=False,
+            ) as temporary_file:
+                temporary_path = temporary_file.name
+                latest.write(temporary_file)
+
+            os.replace(temporary_path, self.config_path)
+            temporary_path = None
+            self.config = latest
+        except (IOError, OSError, UnicodeError, configparser.Error, TypeError) as error:
+            logger.error(f"Error updating config at {self.config_path}: {error}")
+        finally:
+            if temporary_path is not None:
+                try:
+                    os.remove(temporary_path)
+                except OSError:
+                    logger.warning(f"Could not remove temporary config: {temporary_path}")
+
+    def save_user_settings(self) -> None:
+        """Persist only the settings controlled by the Settings window."""
+        self._write_updates({
+            "hidden_footer": str(self.hidden_footer).lower(),
+            "footer_alpha": str(self.footer_alpha),
+            "always_show_points": str(self.always_show_points).lower(),
+            "floating_points": str(self.floating_points).lower(),
+            "startup_with_windows": str(self.startup_with_windows).lower(),
+            "max_slaps": str(self.max_slaps),
+            "invert_cat": str(self.invert_cat).lower(),
+            "current_skin": self.current_skin,
+            "sound_enabled": str(self.sound_enabled).lower(),
+            "sound_volume": str(self.sound_volume),
+        })
 
     def update_slap_count(self, count: int) -> None:
         """Efficiently update only the slap count.
@@ -248,14 +304,18 @@ class ConfigManager:
             count: New slap count value
         """
         self.slaps = count
-        try:
-            self.config["Settings"]["slaps"] = str(count)
+        self._write_updates({"slaps": str(count)})
 
-            with open(self.config_path, "w") as config_file:
-                self.config.write(config_file)
+    def update_window_position(self, x: int, y: int) -> None:
+        """Persist only the current window position."""
+        self.window_x = x
+        self.window_y = y
+        self._write_updates({"window_x": str(x), "window_y": str(y)})
 
-        except (IOError, OSError) as e:
-            logger.error(f"Error updating slap count in {self.config_path}: {e}")
+    def increment_launch_count(self) -> None:
+        """Increment and persist only the launch count."""
+        self.launch_count += 1
+        self._write_updates({"launch_count": str(self.launch_count)})
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get a configuration value by attribute name.
