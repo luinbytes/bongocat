@@ -39,7 +39,3 @@ If you create a custom neon skin you'd like to share:
 1. Create a new folder in `skins/` with your theme name
 2. Add your images and a `skin.json` file
 3. Consider sharing it in the GitHub discussions!
-
----
-
-*Current images are placeholders - replace with your own neon-styled artwork!*
