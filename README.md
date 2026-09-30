@@ -13,7 +13,7 @@ Grab a pre-built release for your platform:
 
 - **Windows**: `BongoCat-windows-x64.exe` (unsigned, SmartScreen warns first launch)
 - **macOS**: `BongoCat-macos.dmg` (unsigned, right-click → Open first launch)
-- **Linux**: `BongoCat-linux-x86_64.AppImage` (`chmod +x` then run)
+- **Linux**: `BongoCat-x86_64.AppImage` (Ubuntu 22.04 or newer; `chmod +x` then run)
 
 Latest: https://github.com/luinbytes/bongocat/releases/latest
 
@@ -44,7 +44,7 @@ Linux needs xcb runtime libs first:
 ```bash
 sudo apt install libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
   libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-sync1 libxcb-xfixes0 \
-  libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0 libfuse2
+  libxcb-xinerama0 libxcb-xkb1 libxkbcommon-x11-0
 ```
 
 ## Configure
