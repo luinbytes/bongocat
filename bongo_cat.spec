@@ -51,6 +51,10 @@ hiddenimports = []
 hiddenimports += collect_submodules('PyQt5')
 hiddenimports += ['pynput.keyboard', 'pynput.mouse', 'pygame', 'pygame.mixer']
 
+# pynput selects these dynamically; headless CI cannot discover them by import.
+if sys.platform.startswith('linux'):
+    hiddenimports += ['pynput.keyboard._xorg', 'pynput.mouse._xorg']
+
 a = Analysis(
     ['bongo_cat/main.py'],
     pathex=[],

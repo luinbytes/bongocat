@@ -2,7 +2,7 @@
 # Trigger: push of a v* tag (e.g. v2.0.1) or manual workflow_dispatch.
 # Outputs attached to the release:
 #   - BongoCat-windows-x64.exe
-#   - BongoCat-linux-x86_64.AppImage
+#   - BongoCat-x86_64.AppImage
 #   - BongoCat-macos.dmg
 
 name: Release
@@ -30,9 +30,10 @@ jobs:
           - os: windows-latest
             artifact_name: BongoCat-windows-x64.exe
             artifact_path: dist/BongoCat-windows-x64.exe
-          - os: ubuntu-latest
-            artifact_name: BongoCat-linux-x86_64.AppImage
-            artifact_path: dist/BongoCat-linux-x86_64.AppImage
+          # Keep the bundled Python and native libraries compatible with Ubuntu 22.04.
+          - os: ubuntu-22.04
+            artifact_name: BongoCat-x86_64.AppImage
+            artifact_path: dist/BongoCat-x86_64.AppImage
           - os: macos-latest
             artifact_name: BongoCat-macos.dmg
             artifact_path: dist/BongoCat-macos.dmg
@@ -51,7 +52,7 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: Install Linux runtime libs for PyQt5 xcb
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -66,8 +67,7 @@ jobs:
             libxcb-xfixes0 \
             libxcb-xinerama0 \
             libxcb-xkb1 \
-            libxkbcommon-x11-0 \
-            libfuse2
+            libxkbcommon-x11-0
 
       - name: Install Python dependencies
         run: |
@@ -129,7 +129,7 @@ jobs:
 
       # ---- Linux: build an AppImage from the single-file PyInstaller binary ----
       - name: Build Linux AppImage
-        if: matrix.os == 'ubuntu-latest'
+        if: matrix.os == 'ubuntu-22.04'
         run: |
           set -euo pipefail
 
@@ -138,8 +138,8 @@ jobs:
             exit 1
           fi
 
-          # Fetch appimagetool (official AppImageKit release).
-          APPIMAGETOOL_URL="https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          # Use the current tool with the statically linked type2 runtime.
+          APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
           curl -fsSL -o appimagetool "$APPIMAGETOOL_URL"
           chmod +x appimagetool
 
@@ -178,7 +178,7 @@ jobs:
           chmod +x "$APPDIR/AppRun"
 
           # ARCH must be set for appimagetool output naming.
-          ARCH=x86_64 ./appimagetool "$APPDIR" "dist/BongoCat-linux-x86_64.AppImage"
+          ARCH=x86_64 ./appimagetool --appimage-extract-and-run "$APPDIR" "dist/BongoCat-x86_64.AppImage"
 
       - name: Verify artifact exists
         shell: bash
@@ -225,6 +225,6 @@ jobs:
           generate_release_notes: true
           files: |
             release-assets/BongoCat-windows-x64.exe
-            release-assets/BongoCat-linux-x86_64.AppImage
+            release-assets/BongoCat-x86_64.AppImage
             release-assets/BongoCat-macos.dmg
           fail_on_unmatched_files: true
