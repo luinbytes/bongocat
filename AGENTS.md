@@ -11,6 +11,8 @@
 
 Use Python 3.11 to match release CI, with a repo-local venv. From the repo root:
 
+On Linux, installing `requirements.txt` needs a compiler and Python headers (`Python.h`; `python3-dev` or the equivalent package for the selected Python). The `pynput` dependency `evdev` may need to build from source on newer Pythons. Python 3.11 with headers works and remains the release CI match.
+
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
@@ -38,6 +40,8 @@ pyinstaller --clean --noconfirm bongo_cat.spec
 
 ## Gotchas
 
+- Setup uses `.venv/`, but `.gitignore` ignores `venv/` and `env/`, not `.venv/`; the repo-local `.venv/` shows as untracked. Do not commit it.
+- Running the app or tests from the repo root writes `achievements.json` there. It is untracked and not ignored; do not commit it.
 - Headless tests need both environment variables shown above.
 - Packaging writes platform-specific artifacts under `dist/`.
 - Linux packaging needs the xcb runtime libraries listed in `README.md` and `.github/workflows/release.yml`.
